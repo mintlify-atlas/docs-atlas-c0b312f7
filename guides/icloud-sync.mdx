@@ -1,0 +1,119 @@
+---
+title: "iCloud Sync"
+---
+
+Defaults can automatically synchronize key values across a user's devices using `NSUbiquitousKeyValueStore` (iCloud key-value storage).
+
+## Enabling sync on a key
+
+Set `iCloud: true` when declaring a key:
+
+```swift
+import Defaults
+
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false, iCloud: true)
+}
+
+// Any write to this key is now automatically synchronized to iCloud.
+Defaults[.isUnicornMode] = true
+```
+
+That's all that's needed in code.
+
+## Xcode setup
+
+Before iCloud sync will work, you must configure your Xcode project:
+
+1. Open your app target in Xcode.
+2. Go to **Signing & Capabilities**.
+3. Click **+ Capability** and add **iCloud**.
+4. Under the iCloud capability, enable **Key-value storage**.
+
+Without this step the sync will silently fail.
+
+## Conflict resolution
+
+When the same key is modified on two devices before they can communicate, Defaults resolves the conflict by always keeping the **latest change** based on a timestamp recorded alongside the value. No manual merge logic is required.
+
+## Storage limits
+
+<Warning>
+iCloud key-value storage has hard limits enforced by the operating system:
+
+- **Maximum 1024 keys** across all keys in your app
+- **Maximum 1 MB total** storage
+
+If either limit is exceeded, new writes will not sync. Design your data model accordingly and prefer syncing only the keys that genuinely need to be shared across devices.
+</Warning>
+
+Defaults uses `NSUbiquitousKeyValueStore` internally. Each synced key actually consumes one `NSUbiquitousKeyValueStore` entry (the value and its timestamp are packed into a single array).
+
+## Dynamically toggling sync
+
+If you do not know at compile time whether a key should sync, you can add and remove keys at runtime using `Defaults.iCloud.add(_:)` and `Defaults.iCloud.remove(_:)`:
+
+```swift
+extension Defaults.Keys {
+    // Declared without iCloud: true
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+// Enable sync later (e.g., after the user opts in)
+if userOptedInToSync {
+    Defaults.iCloud.add(.isUnicornMode)
+}
+
+// Disable sync
+Defaults.iCloud.remove(.isUnicornMode)
+```
+
+Multiple keys can be added at once using the variadic overload:
+
+```swift
+Defaults.iCloud.add(.isUnicornMode, .quality, .selectedTheme)
+```
+
+### Inspecting synced keys
+
+Check which keys are currently registered for sync:
+
+```swift
+let syncedKeys = Defaults.iCloud.keys
+// Returns a Set<Defaults.Keys> of all currently synced keys.
+```
+
+## Waiting for sync completion
+
+Sync happens automatically in the background. In cases where you need to ensure a value has been pushed to iCloud before proceeding (for example, before the app terminates), await `Defaults.iCloud.waitForSyncCompletion()`:
+
+```swift
+Task {
+    Defaults[.isUnicornMode] = true
+
+    print(Defaults[.isUnicornMode])
+    //=> true
+
+    await Defaults.iCloud.waitForSyncCompletion()
+
+    // The value is now synchronized to iCloud.
+}
+```
+
+## Debug logging
+
+Enable verbose logging to trace what is being synced and when:
+
+```swift
+Defaults.iCloud.isDebug = true
+```
+
+When enabled, the library logs messages like the following to the system log using `os_log`:
+
+```
+[Defaults.iCloud] Try synchronizing key 'isUnicornMode' from local
+[Defaults.iCloud] Synchronizing key 'isUnicornMode' with value true from local
+[Defaults.iCloud] Complete synchronization key 'isUnicornMode' from local
+```
+
+Disable this in production builds.

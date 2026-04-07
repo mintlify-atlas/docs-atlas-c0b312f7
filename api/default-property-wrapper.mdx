@@ -1,0 +1,94 @@
+---
+title: "@Default"
+description: "A SwiftUI property wrapper that reads and writes a Defaults key and keeps the view in sync."
+---
+
+`@Default` is a `@propertyWrapper` for SwiftUI `View` structs. It behaves like `@State`: the view re-renders whenever the stored value changes, and you can read or write the value directly.
+
+<Warning>
+  `@Default` is designed for `View` structs only. Do not use it inside an `ObservableObject`.
+</Warning>
+
+## Initializer
+
+```swift
+public init(_ key: Defaults.Key<Value>)
+```
+
+<ParamField path="key" type="Defaults.Key<Value>" required>
+  The key to read from and write to.
+</ParamField>
+
+## Properties
+
+<ResponseField name="wrappedValue" type="Value">
+  The current stored value. Reading this property returns the value from `UserDefaults`. Writing it persists the new value immediately.
+</ResponseField>
+
+<ResponseField name="projectedValue" type="Binding<Value>">
+  A two-way `Binding` you access with the `$` prefix (for example, `$quality`). Pass this to SwiftUI controls such as `Slider` or `Toggle`.
+</ResponseField>
+
+<ResponseField name="defaultValue" type="Value">
+  The default value declared on the key. This does not reflect the current stored value — it reflects the value the key falls back to when no stored value exists.
+</ResponseField>
+
+<ResponseField name="publisher" type="AnyPublisher<KeyChange<Value>, Never>">
+  A Combine publisher that emits a `KeyChange` every time the stored value changes, including an initial event on subscription.
+</ResponseField>
+
+<ResponseField name="isDefaultValue" type="Bool">
+  `true` when the current stored value equals `defaultValue`. Only available when `Value` conforms to `Equatable`.
+</ResponseField>
+
+## Methods
+
+### `reset()`
+
+Resets the key to its default value by removing the stored entry from `UserDefaults`.
+
+```swift
+public func reset()
+```
+
+Access this method through the underscore-prefixed property name (for example, `_quality.reset()`).
+
+## Examples
+
+### Slider with reset button
+
+```swift
+extension Defaults.Keys {
+    static let quality = Key<Double>("quality", default: 1.0)
+}
+
+struct QualityView: View {
+    @Default(.quality) var quality
+
+    var body: some View {
+        VStack {
+            Slider(value: $quality, in: 0...1)
+            Text("Quality: \(quality, specifier: "%.2f")")
+            Button("Reset") {
+                _quality.reset()
+            }
+            .disabled(_quality.isDefaultValue)
+        }
+    }
+}
+```
+
+### Using the Combine publisher
+
+```swift
+struct QualityView: View {
+    @Default(.quality) var quality
+
+    var body: some View {
+        Slider(value: $quality, in: 0...1)
+            .onReceive(_quality.publisher) { change in
+                print("Changed from \(change.oldValue) to \(change.newValue)")
+            }
+    }
+}
+```

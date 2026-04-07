@@ -1,0 +1,146 @@
+---
+title: "Combine Integration"
+---
+
+Defaults provides a Combine-based publisher API for observing key changes. It exists primarily for backwards compatibility with codebases that already use Combine pipelines.
+
+<Warning>
+`Defaults.publisher` is superseded by `Defaults.updates`, the async/await-based API. For new code, prefer `Defaults.updates` — see [Observing Changes](/guides/observation).
+</Warning>
+
+Use `Defaults.publisher` when you need to integrate with an existing Combine pipeline or take advantage of Combine operators such as `.debounce`, `.filter`, `.throttle`, or `.combineLatest`.
+
+## Single key publisher
+
+`Defaults.publisher(_:options:)` returns `AnyPublisher<KeyChange<Value>, Never>`:
+
+```swift
+import Combine
+import Defaults
+
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+var cancellables = Set<AnyCancellable>()
+
+Defaults.publisher(.isUnicornMode)
+    .map(\.newValue)
+    .sink { value in
+        print("isUnicornMode:", value)
+    }
+    .store(in: &cancellables)
+```
+
+The `.map(\.newValue)` pattern extracts the new value from `KeyChange<Value>`, giving you a plain `AnyPublisher<Bool, Never>` that you can compose freely.
+
+## Multiple keys publisher
+
+`Defaults.publisher(keys:options:)` returns `AnyPublisher<Void, Never>`. It fires whenever any of the observed keys change, but does not carry the changed value:
+
+```swift
+Defaults.publisher(keys: .isUnicornMode, .quality)
+    .sink {
+        print("One of the observed keys changed")
+    }
+    .store(in: &cancellables)
+```
+
+Pass an array when your set of keys is dynamic:
+
+```swift
+let keys: [Defaults._AnyKey] = [.isUnicornMode, .quality]
+
+Defaults.publisher(keys: keys)
+    .sink { print("A key changed") }
+    .store(in: &cancellables)
+```
+
+## `ObservationOptions`
+
+Both overloads accept an `options` parameter of type `ObservationOptions`. The default is `[.initial]`.
+
+| Option | Description |
+|--------|-------------|
+| `.initial` | The publisher emits once immediately upon subscription with the current value, before any change occurs. |
+| `.prior` | The publisher emits twice per change: once before the value changes (`isPrior == true`) and once after. |
+
+```swift
+// Only fire on future changes, not immediately
+Defaults.publisher(.isUnicornMode, options: [])
+    .sink { change in
+        print("Changed to:", change.newValue)
+    }
+    .store(in: &cancellables)
+
+// Fire before and after each change
+Defaults.publisher(.quality, options: [.prior])
+    .sink { change in
+        if change.isPrior {
+            print("About to change from:", change.oldValue)
+        } else {
+            print("Changed to:", change.newValue)
+        }
+    }
+    .store(in: &cancellables)
+```
+
+## `KeyChange<Value>` properties
+
+The value emitted by a single-key publisher is a `KeyChange<Value>` struct:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `newValue` | `Value` | The value after the change (or the key default if unavailable). |
+| `oldValue` | `Value` | The value before the change (or the key default if unavailable). |
+| `isPrior` | `Bool` | `true` when this is the pre-change notification (requires `.prior` option). |
+| `kind` | `NSKeyValueChange` | The kind of change (insertion, removal, replacement, etc.). |
+| `indexes` | `IndexSet?` | For ordered collection changes, the affected indexes. |
+
+## Storing cancellables
+
+Always store the `AnyCancellable` returned by `.sink` (or any Combine subscription). If you let it go out of scope, the subscription is immediately cancelled.
+
+```swift
+final class SettingsViewModel {
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        Defaults.publisher(.isUnicornMode)
+            .map(\.newValue)
+            .sink { [weak self] value in
+                self?.handleUnicornModeChange(value)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleUnicornModeChange(_ enabled: Bool) {
+        // ...
+    }
+}
+```
+
+## Using Combine operators
+
+Because `Defaults.publisher` returns a standard `AnyPublisher`, you can apply any Combine operator before subscribing:
+
+```swift
+// Debounce rapid changes — useful for text fields or sliders
+Defaults.publisher(.searchQuery, options: [])
+    .map(\.newValue)
+    .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+    .sink { query in
+        performSearch(query)
+    }
+    .store(in: &cancellables)
+
+// Combine two keys
+Defaults.publisher(.firstName)
+    .map(\.newValue)
+    .combineLatest(Defaults.publisher(.lastName).map(\.newValue))
+    .map { "\($0) \($1)" }
+    .sink { fullName in
+        print("Full name:", fullName)
+    }
+    .store(in: &cancellables)
+```

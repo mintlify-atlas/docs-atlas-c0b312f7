@@ -1,97 +1,99 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Defaults — Swifty UserDefaults"
+description: "A type-safe, modern wrapper around UserDefaults for Swift apps on macOS, iOS, tvOS, watchOS, and visionOS."
 ---
 
-## Setting up
+Defaults is a Swift library that makes `UserDefaults` pleasant to work with. You declare strongly-typed keys with default values in one place, and access them with a clean subscript syntax throughout your app. It's used in production by millions of users across [Sindre Sorhus's apps](https://sindresorhus.com/apps).
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in under 5 minutes with your first key-value pair.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="box" href="/installation">
+    Add Defaults to your project via Swift Package Manager.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Defining Keys" icon="key" href="/guides/defining-keys">
+    Learn how to declare type-safe keys with default values.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/defaults">
+    Explore every public API — subscript, observe, reset, and more.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why Defaults?
 
-Everything you need to create world-class documentation.
+Defaults gives you a type-safe façade over `UserDefaults` with a rich set of built-in features:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Strongly typed" icon="shield-check">
+    Declare the type and default value once. The compiler enforces correctness everywhere you use the key.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="SwiftUI integration" icon="apple">
+    Use `@Default` like `@State` — views automatically re-render when values change.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Codable & NSSecureCoding" icon="database">
+    Store enums, structs, and any `Codable` or `NSSecureCoding` type out of the box.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="iCloud sync" icon="cloud">
+    One flag on a key and it automatically syncs across all your user's devices.
   </Card>
-</Columns>
+  <Card title="Async observation" icon="bolt">
+    Observe changes with `async/await` using `Defaults.updates()` returning an `AsyncStream`.
+  </Card>
+  <Card title="Custom types" icon="puzzle-piece">
+    Implement `Defaults.Bridge` to serialize any custom type exactly the way you want.
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Getting started
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Add the package">
+    In Xcode, go to **File → Add Package Dependencies** and enter `https://github.com/sindresorhus/Defaults`.
+  </Step>
+  <Step title="Define your keys">
+    Extend `Defaults.Keys` to declare strongly-typed keys with default values.
+
+    ```swift
+    import Defaults
+
+    extension Defaults.Keys {
+        static let quality = Key<Double>("quality", default: 0.8)
+        static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+    }
+    ```
+  </Step>
+  <Step title="Read and write values">
+    Access stored values anywhere in your app using the `Defaults` subscript.
+
+    ```swift
+    Defaults[.quality]       // => 0.8
+    Defaults[.quality] = 0.5 // => 0.5
+    ```
+  </Step>
+  <Step title="Use in SwiftUI">
+    Bind keys directly to your views with the `@Default` property wrapper.
+
+    ```swift
+    struct ContentView: View {
+        @Default(.quality) var quality
+
+        var body: some View {
+            Slider(value: $quality, in: 0...1)
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Platform support
+
+Defaults supports all major Apple platforms:
+
+| Platform  | Minimum version |
+|-----------|----------------|
+| macOS     | 11+            |
+| iOS       | 14+            |
+| tvOS      | 14+            |
+| watchOS   | 9+             |
+| visionOS  | 1+             |

@@ -1,0 +1,133 @@
+---
+title: "Defaults.updates()"
+description: "Observe key changes using async/await with AsyncStream."
+---
+
+`Defaults.updates()` returns an `AsyncStream` that emits values whenever a key changes. Iterate it with `for await` inside a `Task`. The observation is automatically cancelled when the `Task` is cancelled.
+
+This is the recommended way to observe `Defaults` key changes. It supersedes `Defaults.observe()` and `Defaults.publisher()`.
+
+## Overloads
+
+### Single key
+
+```swift
+public static func updates<Value: Serializable>(
+    _ key: Key<Value>,
+    initial: Bool = true
+) -> AsyncStream<Value>
+```
+
+Observe a single key and receive the stored value on each change.
+
+<ParamField path="key" type="Key<Value>" required>
+  The key to observe.
+</ParamField>
+
+<ParamField path="initial" type="Bool" default="true">
+  When `true`, the stream emits the current stored value immediately before waiting for changes. Set to `false` to receive only future changes.
+</ParamField>
+
+**Returns** `AsyncStream<Value>` — each element is the current stored value at the time of the change.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Task {
+    for await value in Defaults.updates(.isUnicornMode) {
+        print("Value:", value)
+        // Prints the current value immediately, then again on each change
+    }
+}
+```
+
+### Multiple keys (variadic — parameter packs)
+
+```swift
+public static func updates<each Value: Serializable>(
+    _ keys: repeat Key<each Value>,
+    initial: Bool = true
+) -> AsyncStream<(repeat each Value)>
+```
+
+Observe multiple keys simultaneously using Swift parameter packs. The stream emits a tuple of all current values whenever any of the observed keys changes.
+
+<ParamField path="keys" type="repeat Key<each Value>" required>
+  Two or more keys to observe. Each key can have a different value type.
+</ParamField>
+
+<ParamField path="initial" type="Bool" default="true">
+  When `true`, the stream emits the current values immediately before waiting for changes.
+</ParamField>
+
+**Returns** `AsyncStream<(repeat each Value)>` — each element is a tuple of the current values for all observed keys at the time of the change.
+
+<Note>
+  This overload is annotated `@_disfavoredOverload`. When passing a single key, the compiler prefers the single-key overload above.
+</Note>
+
+```swift
+extension Defaults.Keys {
+    static let foo = Key<Bool>("foo", default: false)
+    static let bar = Key<String>("bar", default: "hello")
+}
+
+Task {
+    for await (foo, bar) in Defaults.updates(.foo, .bar) {
+        print("foo:", foo, "bar:", bar)
+    }
+}
+```
+
+### Array of keys (no values)
+
+```swift
+public static func updates(
+    _ keys: [_AnyKey],
+    initial: Bool = true
+) -> AsyncStream<Void>
+```
+
+Observe a dynamic array of type-erased keys without receiving their values. Useful when you have a variable number of keys to watch and only need to know that something changed.
+
+<ParamField path="keys" type="[_AnyKey]" required>
+  An array of `Defaults.Key` instances to observe. The array can contain keys of mixed value types because `_AnyKey` is type-erased.
+</ParamField>
+
+<ParamField path="initial" type="Bool" default="true">
+  When `true`, the stream emits once immediately on creation before waiting for changes.
+</ParamField>
+
+**Returns** `AsyncStream<Void>` — each element signals that at least one of the observed keys changed. No value information is included.
+
+```swift
+extension Defaults.Keys {
+    static let foo = Key<Bool>("foo", default: false)
+    static let bar = Key<String>("bar", default: "hello")
+}
+
+Task {
+    for await _ in Defaults.updates([.foo, .bar]) {
+        print("One of the values changed")
+        // Read specific keys here if needed
+        print("foo:", Defaults[.foo], "bar:", Defaults[.bar])
+    }
+}
+```
+
+## Cancellation
+
+The observation is tied to the `Task` that runs the loop. Cancelling the task stops all underlying `UserDefaults` observers automatically.
+
+```swift
+let task = Task {
+    for await value in Defaults.updates(.isUnicornMode) {
+        print("Value:", value)
+    }
+}
+
+// Later — stops observation
+task.cancel()
+```

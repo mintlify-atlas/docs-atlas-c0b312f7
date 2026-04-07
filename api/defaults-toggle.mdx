@@ -1,0 +1,168 @@
+---
+title: "Defaults.Toggle"
+description: "A SwiftUI Toggle connected to a Bool Defaults key."
+---
+
+`Defaults.Toggle` is a SwiftUI view that wraps the standard `Toggle` and binds it directly to a `Defaults.Key<Bool>`. The stored value updates automatically when the user flips the toggle.
+
+## Initializers
+
+### String title
+
+```swift
+public init(
+    _ title: some StringProtocol,
+    key: Defaults.Key<Bool>,
+    inverted: Bool = false
+)
+```
+
+<ParamField path="title" type="StringProtocol" required>
+  The label text displayed next to the toggle.
+</ParamField>
+
+<ParamField path="key" type="Defaults.Key<Bool>" required>
+  The key whose `Bool` value the toggle reads and writes.
+</ParamField>
+
+<ParamField path="inverted" type="Bool" default="false">
+  When `true`, the toggle's visual state is the logical inverse of the stored value. The value written to `UserDefaults` is always the non-inverted truth value.
+</ParamField>
+
+### String title with SF Symbol
+
+```swift
+public init(
+    _ title: some StringProtocol,
+    systemImage: String,
+    key: Defaults.Key<Bool>,
+    inverted: Bool = false
+)
+```
+
+<ParamField path="title" type="StringProtocol" required>
+  The label text displayed next to the toggle.
+</ParamField>
+
+<ParamField path="systemImage" type="String" required>
+  The SF Symbol name displayed alongside the title.
+</ParamField>
+
+<ParamField path="key" type="Defaults.Key<Bool>" required>
+  The key whose `Bool` value the toggle reads and writes.
+</ParamField>
+
+<ParamField path="inverted" type="Bool" default="false">
+  When `true`, the toggle's visual state is the logical inverse of the stored value.
+</ParamField>
+
+### Custom label
+
+```swift
+public init(
+    key: Defaults.Key<Bool>,
+    inverted: Bool = false,
+    @ViewBuilder label: @escaping () -> Label
+)
+```
+
+<ParamField path="key" type="Defaults.Key<Bool>" required>
+  The key whose `Bool` value the toggle reads and writes.
+</ParamField>
+
+<ParamField path="inverted" type="Bool" default="false">
+  When `true`, the toggle's visual state is the logical inverse of the stored value.
+</ParamField>
+
+<ParamField path="label" type="() -> Label" required>
+  A `@ViewBuilder` closure that produces any `View` as the toggle label.
+</ParamField>
+
+## Modifiers
+
+### `.onChange(_:)`
+
+```swift
+public func onChange(_ action: @escaping (Bool) -> Void) -> Self
+```
+
+Calls `action` with the new stored value each time the toggle changes. Attach this directly to `Defaults.Toggle` — it is not the standard SwiftUI `View.onChange(of:)`.
+
+<ParamField path="action" type="(Bool) -> Void" required>
+  A closure called with the new stored value after each change. When `inverted` is `true`, the value passed to the closure reflects the actual stored value, not the toggle's visual state.
+</ParamField>
+
+## Examples
+
+### Simple string title
+
+```swift
+extension Defaults.Keys {
+    static let showAllDayEvents = Key<Bool>("showAllDayEvents", default: false)
+}
+
+struct EventSettings: View {
+    var body: some View {
+        Defaults.Toggle("Show All-Day Events", key: .showAllDayEvents)
+    }
+}
+```
+
+### With SF Symbol
+
+```swift
+struct EventSettings: View {
+    var body: some View {
+        Defaults.Toggle("Show All-Day Events", systemImage: "calendar", key: .showAllDayEvents)
+    }
+}
+```
+
+### Custom label
+
+```swift
+struct EventSettings: View {
+    var body: some View {
+        Defaults.Toggle(key: .showAllDayEvents) {
+            HStack {
+                Image(systemName: "calendar")
+                Text("Show All-Day Events")
+                Spacer()
+                Text("Recommended")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        }
+    }
+}
+```
+
+### Reacting to changes
+
+```swift
+struct EventSettings: View {
+    var body: some View {
+        Defaults.Toggle("Show All-Day Events", key: .showAllDayEvents)
+            .onChange { newValue in
+                print("All-day events:", newValue ? "shown" : "hidden")
+            }
+    }
+}
+```
+
+### Inverted toggle
+
+When the stored value represents a "disabled" state but the UI should show it as "enabled", use `inverted: true`:
+
+```swift
+extension Defaults.Keys {
+    static let hideNotifications = Key<Bool>("hideNotifications", default: false)
+}
+
+struct NotificationSettings: View {
+    var body: some View {
+        // Toggle is ON when hideNotifications is false, OFF when it's true
+        Defaults.Toggle("Enable Notifications", key: .hideNotifications, inverted: true)
+    }
+}
+```

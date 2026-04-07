@@ -1,0 +1,127 @@
+---
+title: "AnySerializable"
+---
+
+`Defaults.AnySerializable` is a type-erased wrapper around any value that conforms to `Defaults.Serializable`. It lets you store a value whose concrete type is not known at compile time, or whose type may vary at runtime.
+
+<Note>
+`AnySerializable` is an escape hatch. Prefer strongly typed `Defaults.Key<ConcreteType>` declarations whenever possible. Type erasure trades compile-time safety for runtime flexibility — use it only when that trade-off is justified.
+</Note>
+
+## When to use it
+
+- You need to store values of varying or unknown types under a single key.
+- You are building a generic wrapper or plugin system where the stored type is determined at runtime.
+- You need to store arbitrary JSON-compatible data without committing to a schema at compile time.
+
+## Creating a key
+
+Declare a key with `Defaults.AnySerializable` as the value type:
+
+```swift
+extension Defaults.Keys {
+    static let dynamicValue = Key<Defaults.AnySerializable>("dynamicValue", default: 42)
+}
+```
+
+The default value `42` is an integer literal. `AnySerializable` supports all Swift literal types natively, so this works without any explicit wrapping.
+
+## Reading values
+
+Use `get(_:)` to deserialize the stored value into a specific type:
+
+```swift
+// Inferred from context
+let value: Int? = Defaults[.dynamicValue].get()
+
+// Explicit type parameter
+let value = Defaults[.dynamicValue].get(Int.self) // => 42
+```
+
+Both forms return an optional. If the stored value cannot be deserialized to the requested type, `get` returns `nil`.
+
+## Writing values
+
+Use `set(_:)` to replace the stored value:
+
+```swift
+var current = Defaults[.dynamicValue]
+current.set("hello")
+Defaults[.dynamicValue] = current
+// Defaults[.dynamicValue].get(String.self) => "hello"
+```
+
+You can also write using literal syntax, since `AnySerializable` conforms to all the `ExpressibleBy*Literal` protocols:
+
+```swift
+Defaults[.dynamicValue] = 3.14
+Defaults[.dynamicValue] = "unicorn"
+Defaults[.dynamicValue] = true
+Defaults[.dynamicValue] = nil
+```
+
+## Supported literal types
+
+`AnySerializable` conforms to the following literal protocols, allowing you to assign values directly using Swift literals:
+
+| Literal protocol | Example |
+|-----------------|---------|
+| `ExpressibleByStringLiteral` | `"hello"` |
+| `ExpressibleByBooleanLiteral` | `true` |
+| `ExpressibleByIntegerLiteral` | `42` |
+| `ExpressibleByFloatLiteral` | `3.14` |
+| `ExpressibleByNilLiteral` | `nil` |
+| `ExpressibleByArrayLiteral` | `[1, 2, 3]` |
+| `ExpressibleByDictionaryLiteral` | `["key": "value"]` |
+
+## Important: array and dictionary literal limitations
+
+<Warning>
+Using `ExpressibleByArrayLiteral` or `ExpressibleByDictionaryLiteral` with element types that are not natively supported by `UserDefaults` (property list types) will cause a runtime crash: **"Attempt to insert non-property list object"**.
+
+```swift
+private enum MimeType: String, Defaults.Serializable {
+    case json = "application/json"
+}
+
+// This will crash at runtime:
+Defaults[.dynamicValue] = [MimeType.json]
+```
+
+Only use array/dictionary literals with property-list-compatible element types (`String`, `Bool`, `Int`, `Double`, `Float`, `Data`, `Date`).
+</Warning>
+
+## `Equatable` and `Hashable`
+
+`AnySerializable` conforms to both `Equatable` and `Hashable`. Equality and hashing are implemented for all natively supported `UserDefaults` types. Two `AnySerializable` values are equal when their underlying values are equal and of the same type.
+
+```swift
+let a: Defaults.AnySerializable = 42
+let b: Defaults.AnySerializable = 42
+let c: Defaults.AnySerializable = "42"
+
+a == b // => true
+a == c // => false
+```
+
+## Full example
+
+```swift
+import Defaults
+
+extension Defaults.Keys {
+    static let metadata = Key<Defaults.AnySerializable>("metadata", default: [:])
+}
+
+// Write a dictionary
+Defaults[.metadata] = ["version": 1, "name": "Luna"]
+
+// Read back individual fields
+let version = Defaults[.metadata].get([String: Defaults.AnySerializable].self)?["version"]?.get(Int.self)
+// => 1
+
+// Overwrite with a completely different type
+Defaults[.metadata] = "archived"
+let string = Defaults[.metadata].get(String.self)
+// => "archived"
+```

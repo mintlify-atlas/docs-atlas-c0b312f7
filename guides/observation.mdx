@@ -1,0 +1,168 @@
+---
+title: "Observing Changes"
+---
+
+Defaults provides multiple ways to react to stored value changes. The modern approach uses `AsyncStream` via `Defaults.updates(_:)`. A legacy Combine-based `Defaults.observe(_:)` API is also available for backwards compatibility.
+
+## `Defaults.updates(_:initial:)` — modern async approach
+
+`Defaults.updates` returns an `AsyncStream<Value>` that emits a new value each time the key changes. This is the preferred API on Swift Concurrency.
+
+### Single key
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Task {
+    for await value in Defaults.updates(.isUnicornMode) {
+        print("Value:", value)
+    }
+}
+```
+
+### Multiple keys — receiving values
+
+Use the variadic parameter-pack overload to observe several keys at once and receive all current values as a tuple on every change:
+
+```swift
+Task {
+    for await (foo, bar) in Defaults.updates(.foo, .bar) {
+        print("Values changed:", foo, bar)
+    }
+}
+```
+
+The stream yields a tuple of the **current** values of all observed keys each time any one of them changes.
+
+### Multiple keys — array version
+
+When you need to observe a dynamic array of keys (which cannot be expressed with parameter packs) and do not need the updated values, pass an array of `_AnyKey`:
+
+```swift
+Task {
+    for await _ in Defaults.updates([.foo, .bar]) {
+        print("One of the values changed")
+    }
+}
+```
+
+This overload returns `AsyncStream<Void>` and does not include which key changed or what the new value is.
+
+### `initial` parameter
+
+Both overloads accept an `initial: Bool` parameter (default: `true`). When `true`, the stream immediately yields the current value(s) upon subscription before waiting for the next change. Set it to `false` to only receive future changes:
+
+```swift
+Task {
+    // Will NOT fire immediately — only on future changes
+    for await value in Defaults.updates(.isUnicornMode, initial: false) {
+        print("Changed to:", value)
+    }
+}
+```
+
+## Suppressing change propagation
+
+Use `Defaults.withoutPropagation(_:)` when you want to update a key inside an observation handler without triggering an infinite loop. Changes made inside the closure are not propagated to any `Defaults.observe()` or `Defaults.publisher()` listeners:
+
+```swift
+let observer = Defaults.observe(keys: .key1, .key2) {
+    // This update won't trigger observers again for .key1
+    Defaults.withoutPropagation {
+        Defaults[.key1] = 11
+    }
+
+    // This update will be propagated normally
+    Defaults[.someKey] = true
+}
+```
+
+> **Note:** `withoutPropagation` only suppresses events for `Defaults.observe()` and `Defaults.publisher()`. It has no effect on user-defined KVO observers.
+
+## Legacy API: `Defaults.observe(_:options:handler:)`
+
+The callback-based `observe` API is still available for backwards compatibility. Prefer `Defaults.updates` for new code.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+let observer = Defaults.observe(.isUnicornMode) { change in
+    print(change.newValue)
+    // => false (initial event fires immediately)
+}
+```
+
+### `ObservationOptions`
+
+| Option | Description |
+|--------|-------------|
+| `.initial` | Fire a notification immediately upon registration, before any change occurs. |
+| `.prior` | Fire two notifications per change: one before and one after. The before-change event has `isPrior == true`. |
+
+Pass options as a `Set`:
+
+```swift
+let observer = Defaults.observe(.quality, options: [.prior]) { change in
+    if change.isPrior {
+        print("About to change from:", change.oldValue)
+    } else {
+        print("Changed to:", change.newValue)
+    }
+}
+```
+
+### `KeyChange<Value>` properties
+
+The handler receives a `KeyChange<Value>` struct with the following properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `newValue` | `Value` | The value after the change (or the default if unavailable). |
+| `oldValue` | `Value` | The value before the change (or the default if unavailable). |
+| `isPrior` | `Bool` | `true` if this is the pre-change notification (requires `.prior` option). |
+| `kind` | `NSKeyValueChange` | The kind of change (insertion, removal, replacement, etc.). |
+| `indexes` | `IndexSet?` | For collection changes, the indexes of the changed elements. |
+
+### Observation lifetime management
+
+The object returned from `Defaults.observe` conforms to `Defaults.Observation`. By default the observation lives as long as the returned token. Tie the observation lifetime to another object so it is automatically invalidated when that object is deallocated:
+
+```swift
+class MyController {
+    init() {
+        Defaults.observe(.isUnicornMode) { [unowned self] change in
+            self.isUnicornMode = change.newValue
+        }.tieToLifetime(of: self)
+    }
+}
+```
+
+You can also break the tie explicitly:
+
+```swift
+observation.removeLifetimeTie()
+```
+
+Or invalidate the observation manually at any time:
+
+```swift
+observation.invalidate()
+```
+
+## Legacy Combine publisher
+
+A Combine `publisher` API mirrors the observe API and is also available for backwards compatibility:
+
+```swift
+let cancellable = Defaults.publisher(.isUnicornMode)
+    .map(\.newValue)
+    .sink { value in
+        print(value)
+    }
+```
+
+Prefer `Defaults.updates` for new code.

@@ -1,0 +1,173 @@
+---
+title: "SwiftUI Integration"
+---
+
+Defaults ships with first-class SwiftUI support: a `@Default` property wrapper that behaves like `@State`, and a `Defaults.Toggle` component for boolean keys.
+
+## `@Default` property wrapper
+
+`@Default` reads and writes a `Defaults.Key` and automatically re-renders the view whenever the stored value changes — just like `@State`, but backed by `UserDefaults`.
+
+```swift
+import Defaults
+import SwiftUI
+
+extension Defaults.Keys {
+    static let hasUnicorn = Key<Bool>("hasUnicorn", default: false)
+}
+
+struct ContentView: View {
+    @Default(.hasUnicorn) var hasUnicorn
+
+    var body: some View {
+        Text("Has Unicorn: \(hasUnicorn)")
+        Toggle("Toggle", isOn: $hasUnicorn)
+        Button("Reset") {
+            _hasUnicorn.reset()
+        }
+    }
+}
+```
+
+### Bindings
+
+The projected value (`$`) returns a `Binding<Value>` you can pass to any standard SwiftUI control:
+
+```swift
+struct QualityView: View {
+    @Default(.quality) var quality
+
+    var body: some View {
+        Slider(value: $quality, in: 0...1)
+    }
+}
+```
+
+### Resetting to the default value
+
+Call `reset()` on the underscored property wrapper instance to remove the stored value and revert to the key's default:
+
+```swift
+extension Defaults.Keys {
+    static let opacity = Key<Double>("opacity", default: 1)
+}
+
+struct ContentView: View {
+    @Default(.opacity) var opacity
+
+    var body: some View {
+        VStack {
+            Slider(value: $opacity, in: 0...1)
+            Button("Reset") {
+                _opacity.reset()
+            }
+        }
+    }
+}
+```
+
+### `isDefaultValue`
+
+For keys whose `Value` type is `Equatable`, `@Default` exposes an `isDefaultValue` property that returns `true` when the stored value equals the key's default. Useful for conditionally showing a reset button:
+
+```swift
+struct OpacityView: View {
+    @Default(.opacity) var opacity
+
+    var body: some View {
+        VStack {
+            Slider(value: $opacity, in: 0...1)
+            if !_opacity.isDefaultValue {
+                Button("Reset to default") {
+                    _opacity.reset()
+                }
+            }
+        }
+    }
+}
+```
+
+### Limitation: `@Default` is for `View` only
+
+`@Default` uses `@StateObject` internally and **cannot** be used inside an `ObservableObject`. Use it only in `View` types. If you need to observe a `Defaults` key from an `ObservableObject`, use the `@ObservableDefault` macro instead.
+
+## `Defaults.Toggle`
+
+`Defaults.Toggle` is a SwiftUI `Toggle` that is connected directly to a `Defaults.Key<Bool>`:
+
+```swift
+extension Defaults.Keys {
+    static let showAllDayEvents = Key<Bool>("showAllDayEvents", default: false)
+}
+
+struct ShowAllDayEventsSetting: View {
+    var body: some View {
+        Defaults.Toggle("Show All-Day Events", key: .showAllDayEvents)
+    }
+}
+```
+
+### System image variant
+
+Pass a `systemImage` name to get a labeled toggle with an icon:
+
+```swift
+struct SettingsView: View {
+    var body: some View {
+        Defaults.Toggle(
+            "Dark Mode",
+            systemImage: "moon.fill",
+            key: .isDarkMode
+        )
+    }
+}
+```
+
+### Listening to changes
+
+Attach `.onChange` directly on `Defaults.Toggle` to be called whenever the value changes. Note that this is not `View#onChange` — it is a method on `Defaults.Toggle` itself:
+
+```swift
+struct ShowAllDayEventsSetting: View {
+    var body: some View {
+        Defaults.Toggle("Show All-Day Events", key: .showAllDayEvents)
+            .onChange { newValue in
+                print("Value:", newValue)
+            }
+    }
+}
+```
+
+### Inverted toggle
+
+Pass `inverted: true` to flip the binding — the toggle appears ON when the stored value is `false`, and vice versa. The value passed to `onChange` is always the raw stored value (not the visual state):
+
+```swift
+extension Defaults.Keys {
+    static let muteNotifications = Key<Bool>("muteNotifications", default: false)
+}
+
+struct NotificationsView: View {
+    var body: some View {
+        // Displayed as "on" when notifications are *not* muted
+        Defaults.Toggle("Enable Notifications", key: .muteNotifications, inverted: true)
+    }
+}
+```
+
+### Custom label
+
+Use the full initializer for a custom label view:
+
+```swift
+Defaults.Toggle(key: .showAllDayEvents) {
+    Label {
+        Text("Show All-Day Events")
+        Text("Includes holidays and birthdays")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    } icon: {
+        Image(systemName: "calendar")
+    }
+}
+```

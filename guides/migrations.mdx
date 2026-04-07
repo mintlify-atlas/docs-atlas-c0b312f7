@@ -1,0 +1,164 @@
+---
+title: "Migrating from UserDefaults"
+---
+
+Defaults is a thin, type-safe wrapper around `UserDefaults`. Migrating an existing app to use Defaults requires no data migration — existing values stored by your app are automatically picked up.
+
+## Why migrate
+
+Using raw `UserDefaults` has several rough edges:
+
+- **No type safety.** `UserDefaults.bool(forKey:)`, `string(forKey:)`, etc. can silently return wrong types or zero values.
+- **No single source of truth.** Key name strings are scattered throughout the codebase and can drift out of sync.
+- **No SwiftUI integration.** Wiring `UserDefaults` to SwiftUI requires `@AppStorage` or manual observation boilerplate.
+
+Defaults addresses all three.
+
+## Mapping existing keys
+
+The `name` string you pass to `Key<Value>` must exactly match the key string you used with raw `UserDefaults`. The underlying storage is the same `UserDefaults` database, so existing data is immediately available with no conversion step:
+
+```swift
+// Before (raw UserDefaults)
+UserDefaults.standard.bool(forKey: "isUnicornMode")
+UserDefaults.standard.set(true, forKey: "isUnicornMode")
+
+// After (Defaults)
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Defaults[.isUnicornMode] // Reads the existing value from UserDefaults
+```
+
+If there is no stored value yet, `Defaults` returns the `default` you specify.
+
+## Handling type mismatches
+
+If your app previously stored a value under one type and you now want a different type (for example, `Int` stored as `Double`), `UserDefaults` will return `nil` when the stored plist type doesn't match what the bridge expects, and Defaults will fall back to the default value.
+
+For data that must be preserved, write a one-time migration before declaring the new key:
+
+```swift
+func migrateIfNeeded() {
+    // Runs at most once
+    guard !Defaults[.hasMigratedIntervalKey] else { return }
+
+    let legacyValue = UserDefaults.standard.integer(forKey: "syncInterval")
+    if legacyValue != 0 {
+        Defaults[.syncInterval] = Double(legacyValue)
+    }
+
+    Defaults[.hasMigratedIntervalKey] = true
+}
+```
+
+Run this migration early in your app lifecycle (e.g., `AppDelegate.application(_:didFinishLaunchingWithOptions:)`).
+
+## Resetting values
+
+### Reset a single key
+
+Use `Defaults.reset(_:)` with strongly-typed keys:
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Defaults[.isUnicornMode] = true
+// => true
+
+Defaults.reset(.isUnicornMode)
+
+Defaults[.isUnicornMode]
+// => false (back to default)
+```
+
+Or call `reset()` directly on the key object:
+
+```swift
+Defaults.Keys.isUnicornMode.reset()
+```
+
+Or on the `@Default` property wrapper in a SwiftUI view:
+
+```swift
+_isUnicornMode.reset()
+```
+
+### Reset multiple keys at once
+
+```swift
+Defaults.reset(.quality, .isUnicornMode, .theme)
+```
+
+### Reset by string key name
+
+When you have keys stored as strings (for example, in a collection) and cannot use the generic `Key<Value>` type directly, use the string-based overload:
+
+```swift
+Defaults.reset("isUnicornMode", "quality")
+
+// Or using the name property of a key:
+Defaults.reset(Defaults.Keys.isUnicornMode.name)
+```
+
+```swift
+// With a specific suite:
+Defaults.reset("sharedKey", suite: UserDefaults(suiteName: "group.com.example")!)
+```
+
+### Remove all user-defined entries
+
+`Defaults.removeAll(suite:)` removes every user-defined key from the given `UserDefaults` suite, effectively resetting the app to factory defaults:
+
+```swift
+// Remove all user-defined entries from the standard suite
+Defaults.removeAll()
+
+// Remove all user-defined entries from a custom suite
+Defaults.removeAll(suite: UserDefaults(suiteName: "group.com.example.app")!)
+```
+
+> **Note:** `removeAll` only removes entries written by your app. System-defined entries (such as those set by `register(defaults:)` or by the OS itself) are not affected.
+
+## Migrating from older Defaults versions
+
+### `Defaults.observe` → `Defaults.updates`
+
+The callback-based `Defaults.observe(_:options:handler:)` API is still functional but exists for backwards compatibility and will be deprecated in a future version. Replace it with the async `Defaults.updates(_:initial:)`:
+
+```swift
+// Old
+let observer = Defaults.observe(.isUnicornMode) { change in
+    updateUI(change.newValue)
+}
+
+// New
+Task {
+    for await value in Defaults.updates(.isUnicornMode) {
+        updateUI(value)
+    }
+}
+```
+
+The `initial: true` default behavior of `Defaults.updates` matches the `.initial` option that was the default for `Defaults.observe`.
+
+### `Defaults.publisher` → `Defaults.updates`
+
+Similarly, the Combine `Defaults.publisher(_:options:)` API is available but being superseded:
+
+```swift
+// Old
+let cancellable = Defaults.publisher(.isUnicornMode)
+    .map(\.newValue)
+    .sink { updateUI($0) }
+
+// New
+Task {
+    for await value in Defaults.updates(.isUnicornMode) {
+        updateUI(value)
+    }
+}
+```

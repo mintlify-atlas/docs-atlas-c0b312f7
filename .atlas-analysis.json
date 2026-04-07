@@ -1,0 +1,121 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Defaults",
+  "projectDescription": "A type-safe, Swifty wrapper around UserDefaults with support for Codable types, SwiftUI integration, Combine publishers, async/await observation, iCloud sync, and Swift macros.",
+  "theme": "palm",
+  "primaryColor": "#fb502d",
+  "lightColor": "#fb9252",
+  "darkColor": "#fc7c7c",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/defining-keys",
+              "guides/swiftui",
+              "guides/observation",
+              "guides/icloud-sync",
+              "guides/custom-types",
+              "guides/migrations"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/observable-macro",
+              "advanced/combine",
+              "advanced/suites",
+              "advanced/any-serializable"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/defaults",
+              "api/key",
+              "api/serializable"
+            ]
+          },
+          {
+            "group": "Bridges",
+            "pages": [
+              "api/bridges-overview",
+              "api/built-in-bridges"
+            ]
+          },
+          {
+            "group": "SwiftUI & Observation",
+            "pages": [
+              "api/default-property-wrapper",
+              "api/defaults-toggle",
+              "api/updates",
+              "api/publisher"
+            ]
+          },
+          {
+            "group": "iCloud",
+            "pages": [
+              "api/icloud"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Strongly-typed key-value storage with explicit type and default value declarations",
+    "SwiftUI @Default property wrapper for reactive view updates",
+    "Defaults.Toggle SwiftUI component for Bool keys",
+    "@ObservableDefault macro for use in @Observable classes",
+    "Async/await observation via Defaults.updates() returning AsyncStream",
+    "Combine publisher support via Defaults.publisher()",
+    "iCloud sync via NSUbiquitousKeyValueStore with automatic conflict resolution",
+    "Codable support for arbitrary value types",
+    "NSSecureCoding support for legacy AppKit/UIKit types",
+    "Custom bridge protocol for user-defined serialization",
+    "Support for collections: Array, Set, Dictionary, Range, ClosedRange",
+    "SwiftUI Color, NSColor/UIColor, UUID, URL, and font descriptors natively supported",
+    "Custom suite (UserDefaults app groups) support",
+    "Reset keys to default values individually or in bulk"
+  ],
+  "publicApiSurface": [
+    "Defaults[key]",
+    "Defaults.Key<Value>",
+    "Defaults.Keys",
+    "Defaults.Serializable",
+    "Defaults.Bridge",
+    "Defaults.PreferRawRepresentable",
+    "Defaults.PreferNSSecureCoding",
+    "Defaults.CollectionSerializable",
+    "Defaults.SetAlgebraSerializable",
+    "Defaults.AnySerializable",
+    "Defaults.updates(_:initial:)",
+    "Defaults.observe(_:options:handler:)",
+    "Defaults.publisher(_:options:)",
+    "Defaults.reset(_:)",
+    "Defaults.removeAll(suite:)",
+    "Defaults.withoutPropagation(_:)",
+    "Defaults.iCloud.add(_:)",
+    "Defaults.iCloud.remove(_:)",
+    "Defaults.iCloud.waitForSyncCompletion()",
+    "@Default",
+    "Defaults.Toggle",
+    "@ObservableDefault"
+  ]
+}

@@ -1,0 +1,190 @@
+---
+title: "Defaults.iCloud"
+description: "Automatically synchronize Defaults keys across a user's devices using iCloud key-value storage."
+---
+
+`Defaults.iCloud` is a public enum that acts as a namespace for iCloud key-value sync. It manages a shared synchronizer backed by `NSUbiquitousKeyValueStore`.
+
+<Note>
+  Before iCloud sync will work, you must enable the **iCloud** capability in your app target's **Signing & Capabilities** tab in Xcode, then check **Key-value storage** under iCloud services. Without this step, sync silently fails.
+</Note>
+
+<Warning>
+  `NSUbiquitousKeyValueStore` enforces hard OS-level limits: a maximum of **1024 keys** and **1 MB total storage** across your app. Writes that exceed either limit will not sync. Only register keys that genuinely need cross-device sharing.
+</Warning>
+
+## Quick start
+
+The simplest way to enable sync is to set `iCloud: true` when declaring a key:
+
+```swift
+import Defaults
+
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false, iCloud: true)
+}
+
+// Any write is now automatically synchronized to iCloud.
+Defaults[.isUnicornMode] = true
+```
+
+To toggle sync at runtime instead, use `add(_:)` and `remove(_:)`.
+
+---
+
+## Properties
+
+### `keys`
+
+```swift
+public static var keys: Set<Defaults.Keys> { get }
+```
+
+The set of keys currently registered for automatic iCloud sync. Read-only.
+
+```swift
+let syncedKeys = Defaults.iCloud.keys
+print(syncedKeys.map(\.name))
+// ["isUnicornMode", "selectedTheme"]
+```
+
+---
+
+### `isDebug`
+
+```swift
+public static var isDebug: Bool
+```
+
+When `true`, the library emits verbose sync messages to the system log via `os_log`. Defaults to `false`.
+
+Each log line includes the key name, its current value, and the sync status (`Try synchronizing`, `Synchronizing`, `Complete synchronization`, or `Aborting`). All messages are prefixed with `[Defaults.iCloud]`.
+
+```swift
+// Enable before launch or in DEBUG builds only.
+Defaults.iCloud.isDebug = true
+```
+
+Example log output:
+
+```
+[Defaults.iCloud] Try synchronizing key 'isUnicornMode' from local
+[Defaults.iCloud] Synchronizing key 'isUnicornMode' with value true from local
+[Defaults.iCloud] Complete synchronization key 'isUnicornMode' from local
+```
+
+<Warning>
+  Disable `isDebug` in production builds. Log output may include user data values.
+</Warning>
+
+<ParamField path="isDebug" type="Bool" default="false">
+  Enables verbose sync logging via `os_log`. Set to `true` only during development.
+</ParamField>
+
+---
+
+## Methods
+
+### `add(_:)`
+
+```swift
+public static func add<each Value: Defaults.Serializable>(_ keys: repeat Defaults.Key<each Value>)
+```
+
+Registers one or more keys for automatic iCloud sync. When a registered key's value changes locally, the new value is pushed to `NSUbiquitousKeyValueStore`. When a change arrives from another device, the local value is updated.
+
+Calling `add(_:)` on a key that is already registered is a no-op.
+
+<ParamField path="keys" type="repeat Defaults.Key<each Value>" required>
+  One or more typed `Defaults.Key` instances to register for sync. The variadic parameter pack accepts keys of different value types in a single call.
+</ParamField>
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+    static let quality = Key<Int>("quality", default: 80)
+    static let selectedTheme = Key<String>("selectedTheme", default: "system")
+}
+
+// Register a single key
+Defaults.iCloud.add(.isUnicornMode)
+
+// Register multiple keys of different types in one call
+Defaults.iCloud.add(.isUnicornMode, .quality, .selectedTheme)
+```
+
+---
+
+### `remove(_:)` — variadic overload
+
+```swift
+public static func remove<each Value>(_ keys: repeat Defaults.Key<each Value>)
+```
+
+Unregisters one or more typed keys from automatic sync. Changes to these keys are no longer pushed to or pulled from iCloud after this call.
+
+<ParamField path="keys" type="repeat Defaults.Key<each Value>" required>
+  One or more typed `Defaults.Key` instances to unregister.
+</ParamField>
+
+```swift
+// Unregister when the user opts out of sync
+Defaults.iCloud.remove(.isUnicornMode, .quality)
+```
+
+---
+
+### `remove(_:)` — array overload
+
+```swift
+public static func remove(_ keys: [Defaults._AnyKey])
+```
+
+Unregisters a heterogeneous array of keys from automatic sync. Use this overload when you need to unregister keys whose types are not known at compile time or when working with a collection of mixed key types.
+
+<ParamField path="keys" type="[Defaults._AnyKey]" required>
+  An array of type-erased `Defaults._AnyKey` instances to unregister.
+</ParamField>
+
+```swift
+let keysToRemove: [Defaults._AnyKey] = [Defaults.Keys.isUnicornMode, Defaults.Keys.quality]
+Defaults.iCloud.remove(keysToRemove)
+```
+
+---
+
+### `removeAll()`
+
+```swift
+public static func removeAll()
+```
+
+Unregisters all keys from automatic sync and stops all local observations. After this call, `Defaults.iCloud.keys` returns an empty set.
+
+```swift
+// Unregister everything at once, e.g., when the user signs out
+Defaults.iCloud.removeAll()
+```
+
+---
+
+### `waitForSyncCompletion()`
+
+```swift
+public static func waitForSyncCompletion() async
+```
+
+Suspends the current task until all pending sync operations have finished. Sync happens automatically in the background — you generally do not need to call this. Use it when you must guarantee that a value has been written to iCloud before the app proceeds (for example, before termination or before a sign-out flow).
+
+```swift
+Task {
+    Defaults[.isUnicornMode] = true
+
+    print(Defaults[.isUnicornMode])
+    //=> true
+
+    await Defaults.iCloud.waitForSyncCompletion()
+
+    // The value is now written to NSUbiquitousKeyValueStore.
+}
+```

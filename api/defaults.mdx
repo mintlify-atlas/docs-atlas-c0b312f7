@@ -1,0 +1,192 @@
+---
+title: "Defaults"
+description: "The primary namespace and entry point for all Defaults operations."
+---
+
+`Defaults` is a public `enum` used as a namespace. It provides the subscript operator for reading and writing values, several overloads of `reset`, `removeAll`, and `withoutPropagation`.
+
+## Subscript
+
+```swift
+public static subscript<Value: Serializable>(key: Key<Value>) -> Value { get set }
+```
+
+Read or write a value for a given key. The type is inferred from the key's generic parameter, so the compiler will reject mismatched assignments at compile time.
+
+```swift
+extension Defaults.Keys {
+    static let quality = Key<Double>("quality", default: 0.8)
+}
+
+Defaults[.quality]        // 0.8
+Defaults[.quality] = 0.5  // 0.5
+Defaults[.quality] += 0.1 // 0.6
+
+// Defaults[.quality] = "🦄"
+// ^^^ [Cannot assign value of type 'String' to type 'Double']
+```
+
+<ParamField path="key" type="Key<Value>">
+  The strongly-typed key that identifies the stored value and its `UserDefaults` suite.
+</ParamField>
+
+---
+
+## reset
+
+Four overloads are available, ranging from strongly-typed variadic keys to plain `String` keys.
+
+### Typed variadic keys (preferred)
+
+```swift
+public static func reset<each Value>(
+    _ keys: repeat Key<each Value>,
+    suite: UserDefaults = .standard
+)
+```
+
+Resets one or more typed keys back to their default values. Because it accepts a parameter pack, you can pass any combination of differently-typed keys in a single call.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+    static let quality = Key<Double>("quality", default: 0.8)
+}
+
+Defaults[.isUnicornMode] = true
+Defaults[.quality] = 0.1
+
+Defaults.reset(.isUnicornMode, .quality)
+
+Defaults[.isUnicornMode] // false
+Defaults[.quality]       // 0.8
+```
+
+<ParamField path="keys" type="repeat Key<each Value>">
+  One or more typed `Defaults.Key` instances to reset.
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  Unused in this overload — each key carries its own suite and resets itself by calling `key.reset()`. Present for API surface consistency with the string-based overloads.
+</ParamField>
+
+---
+
+### `_AnyKey` variadic
+
+```swift
+@_disfavoredOverload
+public static func reset(_ keys: _AnyKey...)
+```
+
+Accepts a variadic list of type-erased `_AnyKey` values (i.e. `Defaults.Keys` instances). Useful when you have a heterogeneous list but still want static key references.
+
+```swift
+Defaults.reset(.isUnicornMode, .quality)
+```
+
+<ParamField path="keys" type="_AnyKey...">
+  One or more type-erased keys.
+</ParamField>
+
+---
+
+### `[_AnyKey]` array
+
+```swift
+public static func reset(_ keys: [_AnyKey])
+```
+
+Accepts a pre-built array of type-erased keys. This overload exists specifically for cases where keys must be stored in a collection before being reset at a later point.
+
+```swift
+let keysToReset: [Defaults._AnyKey] = [Defaults.Keys.isUnicornMode, Defaults.Keys.quality]
+Defaults.reset(keysToReset)
+```
+
+<ParamField path="keys" type="[_AnyKey]">
+  An array of type-erased keys to reset.
+</ParamField>
+
+---
+
+### String keys
+
+```swift
+public static func reset(_ keys: String..., suite: UserDefaults = .standard)
+public static func reset(_ keys: [String], suite: UserDefaults = .standard)
+```
+
+Resets keys identified by their raw `UserDefaults` name. Prefer typed key overloads whenever possible; these are provided for situations where keys must be stored in a plain string collection.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Defaults[.isUnicornMode] = true
+
+Defaults.reset(Defaults.Keys.isUnicornMode.name)
+// Or: Defaults.reset("isUnicornMode")
+// Or: Defaults.reset(["isUnicornMode"])
+
+Defaults[.isUnicornMode] // false
+```
+
+<ParamField path="keys" type="String... or [String]">
+  The raw `UserDefaults` key names to reset.
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  The `UserDefaults` suite that contains the keys.
+</ParamField>
+
+---
+
+## removeAll
+
+```swift
+public static func removeAll(suite: UserDefaults = .standard)
+```
+
+Removes all user-defined entries from the specified `UserDefaults` suite. System-defined entries are not affected.
+
+```swift
+Defaults.removeAll()
+// Or target a custom suite:
+Defaults.removeAll(suite: UserDefaults(suiteName: "com.example.app")!)
+```
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  The `UserDefaults` suite to clear.
+</ParamField>
+
+---
+
+## withoutPropagation
+
+```swift
+public static func withoutPropagation(_ closure: () -> Void)
+```
+
+Executes `closure` without triggering `Defaults` change events. Any key mutations made inside the closure will not propagate to `Defaults.observe()` or `Defaults.publisher()` listeners. This is useful for preventing infinite recursion when a key is mutated inside its own observation callback.
+
+<Note>
+  This only suppresses Defaults-managed observation callbacks. User-written KVO will not be affected.
+</Note>
+
+```swift
+let observer = Defaults.observe(keys: .key1, .key2) {
+    Defaults.withoutPropagation {
+        // Update .key1 without triggering the listener again.
+        Defaults[.key1] = 11
+    }
+
+    // This change will still propagate normally.
+    Defaults[.someKey] = true
+}
+```
+
+<ParamField path="closure" type="() -> Void">
+  The block of code to execute with observation propagation disabled.
+</ParamField>

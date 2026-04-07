@@ -1,0 +1,153 @@
+---
+title: "Defaults.publisher()"
+description: "Combine publisher for observing Defaults key changes."
+---
+
+`Defaults.publisher()` returns an `AnyPublisher` that emits a value whenever a `Defaults` key changes. It is built on KVO and integrates with any Combine pipeline.
+
+<Warning>
+  These methods exist for backwards compatibility. Prefer [`Defaults.updates()`](/api/updates) for new code.
+</Warning>
+
+## Overloads
+
+### Single key
+
+```swift
+public static func publisher<Value: Serializable>(
+    _ key: Key<Value>,
+    options: ObservationOptions = [.initial]
+) -> AnyPublisher<KeyChange<Value>, Never>
+```
+
+<ParamField path="key" type="Key<Value>" required>
+  The key to observe.
+</ParamField>
+
+<ParamField path="options" type="ObservationOptions" default="[.initial]">
+  Controls when events are emitted. See [ObservationOptions](#observationoptions) below.
+</ParamField>
+
+**Returns** `AnyPublisher<KeyChange<Value>, Never>` — emits a `KeyChange` on each change. Never fails.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+let cancellable = Defaults.publisher(.isUnicornMode)
+    .map(\.newValue)
+    .sink { value in
+        print("Value:", value)
+    }
+```
+
+### Array of keys
+
+```swift
+public static func publisher(
+    keys: [_AnyKey],
+    options: ObservationOptions = [.initial]
+) -> AnyPublisher<Void, Never>
+```
+
+<ParamField path="keys" type="[_AnyKey]" required>
+  An array of type-erased keys to observe.
+</ParamField>
+
+<ParamField path="options" type="ObservationOptions" default="[.initial]">
+  Controls when events are emitted.
+</ParamField>
+
+**Returns** `AnyPublisher<Void, Never>` — emits `Void` whenever any of the keys changes. No value information is included.
+
+```swift
+let cancellable = Defaults.publisher(keys: [.foo, .bar])
+    .sink {
+        print("A value changed")
+    }
+```
+
+### Variadic keys
+
+```swift
+public static func publisher(
+    keys: _AnyKey...,
+    options: ObservationOptions = [.initial]
+) -> AnyPublisher<Void, Never>
+```
+
+A convenience overload that accepts keys as variadic arguments rather than an array. Delegates to the array overload.
+
+<ParamField path="keys" type="_AnyKey..." required>
+  One or more type-erased keys to observe.
+</ParamField>
+
+<ParamField path="options" type="ObservationOptions" default="[.initial]">
+  Controls when events are emitted.
+</ParamField>
+
+**Returns** `AnyPublisher<Void, Never>` — emits `Void` whenever any key changes.
+
+```swift
+let cancellable = Defaults.publisher(keys: .foo, .bar)
+    .sink {
+        print("A value changed")
+    }
+```
+
+## ObservationOptions
+
+`ObservationOptions` is `Set<ObservationOption>`. Two options are available:
+
+<ResponseField name=".initial" type="ObservationOption">
+  Emits an event immediately when the subscription is created, before any changes occur. This is the default for all `publisher` overloads. Useful for setting initial UI state.
+</ResponseField>
+
+<ResponseField name=".prior" type="ObservationOption">
+  Emits a separate event _before_ each change in addition to the usual event _after_ the change. The before-change event has `isPrior` set to `true` on the `KeyChange`. Useful for animating transitions.
+</ResponseField>
+
+## KeyChange
+
+`Defaults.KeyChange<Value>` describes a single change event emitted by the single-key publisher.
+
+<ResponseField name="kind" type="NSKeyValueChange">
+  The kind of change: `.setting`, `.insertion`, `.removal`, or `.replacement`.
+</ResponseField>
+
+<ResponseField name="indexes" type="IndexSet?">
+  The indexes of inserted, removed, or replaced objects when observing a collection. `nil` for scalar values.
+</ResponseField>
+
+<ResponseField name="isPrior" type="Bool">
+  `true` when this event was emitted before the change (only possible when `.prior` is included in `options`).
+</ResponseField>
+
+<ResponseField name="newValue" type="Value">
+  The value after the change. Falls back to the key's default value if deserialization fails.
+</ResponseField>
+
+<ResponseField name="oldValue" type="Value">
+  The value before the change. Falls back to the key's default value if no previous value existed or deserialization fails.
+</ResponseField>
+
+## Example
+
+```swift
+extension Defaults.Keys {
+    static let volume = Key<Double>("volume", default: 1.0)
+}
+
+var cancellables = Set<AnyCancellable>()
+
+Defaults.publisher(.volume, options: [.initial, .prior])
+    .sink { change in
+        if change.isPrior {
+            print("About to change from", change.oldValue)
+        } else {
+            print("Changed to", change.newValue)
+        }
+    }
+    .store(in: &cancellables)
+```

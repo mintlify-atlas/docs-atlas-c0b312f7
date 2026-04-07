@@ -1,0 +1,149 @@
+---
+title: "@ObservableDefault Macro"
+---
+
+`@ObservableDefault` is an attached Swift macro that integrates `Defaults` keys with the Swift Observation framework (`@Observable` classes). It is the counterpart to the `@Default` property wrapper, which only works inside `View` structs.
+
+## When to use it
+
+| Situation | Use |
+|-----------|-----|
+| SwiftUI `View` struct | `@Default` |
+| `@Observable` class | `@ObservableDefault` |
+
+If you put `@Default` inside an `@Observable` class, it will not compile. `@ObservableDefault` is designed specifically for this case.
+
+## Import
+
+`@ObservableDefault` ships in a separate library product. Add the import alongside `Defaults`:
+
+```swift
+import Defaults
+import DefaultsMacros
+```
+
+Make sure `DefaultsMacros` is added as a dependency in your package or project alongside `Defaults`.
+
+## Usage
+
+Attach `@ObservableDefault(.key)` to a `var` property in an `@Observable` class. You **must** also attach `@ObservationIgnored` to the same property:
+
+```swift
+import Defaults
+import DefaultsMacros
+import Observation
+
+extension Defaults.Keys {
+    static let cat = Key<String>("cat", default: "Luna")
+}
+
+@Observable
+final class CatModel {
+    @ObservableDefault(.cat)
+    @ObservationIgnored
+    var catName: String
+}
+```
+
+You can then read and write `catName` as a normal property. Changes to the underlying `UserDefaults` value (from anywhere in the app) automatically propagate back to the `@Observable` tracking system, so SwiftUI views that depend on `catName` will re-render.
+
+## Macro expansion
+
+The macro generates getter and setter accessors that mirror what `@Observable` itself produces, but route reads and writes through `Defaults`:
+
+```swift
+// Source:
+@Observable
+final class CatModel {
+    @ObservableDefault(.cat)
+    @ObservationIgnored
+    var catName: String
+}
+
+// Expands to (simplified):
+@Observable
+final class CatModel {
+    @ObservationIgnored
+    var catName: String {
+        get {
+            access(keyPath: \.catName)
+            return Defaults[.cat]
+        }
+        set {
+            withMutation(keyPath: \.catName) {
+                Defaults[.cat] = newValue
+            }
+        }
+    }
+}
+        set {
+            withMutation(keyPath: \.catName) {
+                Defaults[.cat] = newValue
+            }
+        }
+    }
+}
+```
+
+The `access(keyPath:)` call registers a dependency with the Observation framework so that any `@Observable`-aware consumer (such as a SwiftUI `View`) tracks the property correctly. The `withMutation(keyPath:)` call notifies observers before and after the value changes.
+
+The macro also sets up a `Defaults.publisher` subscription (stored as an Objective-C associated object) in the getter. This subscription fires whenever the `UserDefaults` value changes from *outside* the class — for example from another process, an extension, or iCloud sync — and propagates the update back into the `@Observable` tracking system. `Defaults.withoutPropagation` is used inside the callback to prevent infinite recursion.
+
+## Why `@ObservationIgnored` is required
+
+<Warning>
+You must add **both** `@ObservableDefault(.key)` and `@ObservationIgnored` to the property. Omitting `@ObservationIgnored` causes a compile-time conflict because `@Observable` would try to generate its own accessors for the same property, colliding with the ones the macro produces.
+</Warning>
+
+`@Observable` wraps every stored property automatically. By marking the property `@ObservationIgnored`, you tell `@Observable` to leave that property alone — and `@ObservableDefault` takes over the observation wiring instead.
+
+## Constraints
+
+The macro enforces the following at compile time and emits a clear diagnostic if any rule is violated:
+
+- Must be attached to a `var` declaration (not `let`).
+- Must be attached to a single property (not a multi-binding declaration).
+- The property must not have an initial value assignment. Set the default in the `Defaults.Key` definition instead.
+- The property must not already have an accessor block.
+- Must be called with exactly one argument of type `Defaults.Key`.
+
+## Full SwiftUI example
+
+```swift
+import Defaults
+import DefaultsMacros
+import Observation
+import SwiftUI
+
+extension Defaults.Keys {
+    static let cat = Key<String>("cat", default: "Luna")
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+@Observable
+final class AppModel {
+    @ObservableDefault(.cat)
+    @ObservationIgnored
+    var catName: String
+
+    @ObservableDefault(.isUnicornMode)
+    @ObservationIgnored
+    var isUnicornMode: Bool
+}
+
+struct ContentView: View {
+    @State private var model = AppModel()
+
+    var body: some View {
+        VStack {
+            Text("Cat: \(model.catName)")
+            Toggle("Unicorn mode", isOn: $model.isUnicornMode)
+            Button("Rename") {
+                model.catName = "Stella"
+            }
+        }
+    }
+}
+```
+
+Because `AppModel` is `@Observable`, SwiftUI only re-renders the parts of the view that actually read each property, giving you fine-grained performance alongside persistent `UserDefaults` storage.

@@ -1,0 +1,52 @@
+---
+title: "Introduction"
+description: "Defaults is a type-safe, Swifty wrapper around UserDefaults for Swift apps."
+---
+
+Defaults is a Swift library that puts a strongly-typed facade over `UserDefaults`. You declare each stored value's type and default value once, in one place, and then read or write it anywhere in your app using a clean subscript syntax. It's used in production by millions of users across [Sindre Sorhus's apps](https://sindresorhus.com/apps).
+
+## Highlights
+
+- **Strongly typed** — Declare the type and default value upfront. The compiler rejects mismatches at build time.
+- **SwiftUI support** — The `@Default` property wrapper updates your view whenever the stored value changes, just like `@State`.
+- **Codable support** — Store any `Codable` value, including enums, structs, and arrays.
+- **NSSecureCoding support** — Store any `NSSecureCoding` value directly.
+- **Observation** — Observe changes to keys using Swift concurrency (`async`/`await`) via `Defaults.updates()`.
+- **iCloud sync** — Set `iCloud: true` on a key and it automatically synchronizes across all of a user's devices.
+- **Debuggable** — Values are stored as JSON, so you can inspect them in the UserDefaults pane of Xcode or any plist viewer.
+- **Customizable** — Implement `Defaults.Bridge` to serialize and deserialize any custom type in whatever way you need.
+
+## Why use Defaults over `@AppStorage`
+
+`@AppStorage` is convenient for simple cases, but Defaults gives you several advantages:
+
+- **Single source of truth for identifiers and defaults.** You define both the key name and the default value in one place — in an extension on `Defaults.Keys`. With `@AppStorage` you repeat the key string and the default value at every call site, which leads to inconsistencies.
+- **Use it outside SwiftUI.** `Defaults[.quality]` works anywhere — in a service, a background task, or a command-line tool. `@AppStorage` is a property wrapper that only works inside a `View`.
+- **Observe changes.** `Defaults.updates(.quality)` returns an `AsyncStream` you can iterate with `for await`. `@AppStorage` has no observation API.
+- **More supported types.** Defaults works with any `Codable` or `NSSecureCoding` type. `@AppStorage` is limited to a small set of primitive types.
+- **Easy custom type support.** Conform your type to `Defaults.Serializable` and provide a `Defaults.Bridge` — no extra infrastructure required.
+- **Built-in `Defaults.Toggle`.** A convenience SwiftUI `Toggle` component that binds directly to a `Defaults.Key<Bool>`.
+
+## Platform compatibility
+
+| Platform | Minimum version |
+|----------|----------------|
+| macOS    | 11+            |
+| iOS      | 14+            |
+| tvOS     | 14+            |
+| watchOS  | 9+             |
+| visionOS | 1+             |
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="box" href="/installation">
+    Add Defaults to your project via Swift Package Manager.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    From zero to persistent storage in minutes.
+  </Card>
+  <Card title="Defining keys" icon="key" href="/guides/defining-keys">
+    Learn how to declare type-safe keys with default values.
+  </Card>
+</CardGroup>

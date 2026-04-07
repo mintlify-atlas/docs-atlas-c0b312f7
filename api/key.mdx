@@ -1,0 +1,216 @@
+---
+title: "Defaults.Key"
+description: "A strongly-typed key for accessing UserDefaults values."
+---
+
+`Defaults.Key<Value>` is the primary way to declare a stored preference. Keys are typically declared as static properties on `Defaults.Keys` (a typealias for `Defaults._AnyKey`) so they are available throughout your app via dot-syntax.
+
+```swift
+import Defaults
+
+extension Defaults.Keys {
+    static let quality = Key<Double>("quality", default: 0.8)
+    //            ^            ^         ^                ^
+    //           Key          Type   UserDefaults name   Default value
+}
+```
+
+---
+
+## `_AnyKey` base class
+
+```swift
+public class _AnyKey: @unchecked Sendable
+```
+
+The type-erased base class shared by all keys. Because `Key<Value>` is generic it cannot be stored directly in a heterogeneous collection; `_AnyKey` (exposed as `Defaults.Keys`) solves this.
+
+| Property | Type | Description |
+|---|---|---|
+| `name` | `String` | The raw `UserDefaults` key string. |
+| `suite` | `UserDefaults` | The `UserDefaults` suite this key belongs to. |
+
+### Conformances
+
+`_AnyKey` conforms to `Equatable` and `Hashable` based on the combination of `name` and `suite`.
+
+---
+
+## `Key<Value>`
+
+```swift
+public final class Key<Value: Serializable>: _AnyKey, @unchecked Sendable
+```
+
+A concrete, strongly-typed key. `Value` must conform to `Defaults.Serializable`.
+
+### Initializers
+
+#### Static default value
+
+```swift
+public init(
+    _ name: String,
+    default defaultValue: Value,
+    suite: UserDefaults = .standard,
+    iCloud: Bool = false
+)
+```
+
+The most common initializer. The default value is registered with `UserDefaults.register(defaults:)` so it is visible to legacy KVO bindings and other `UserDefaults` consumers.
+
+```swift
+extension Defaults.Keys {
+    static let quality = Key<Double>("quality", default: 0.8)
+    static let appTheme = Key<String>("appTheme", default: "system", suite: UserDefaults(suiteName: "com.example.app")!)
+}
+```
+
+<ParamField path="name" type="String" required>
+  The `UserDefaults` key name. Must be ASCII, must not start with `@`, and must not contain a dot (`.`).
+</ParamField>
+
+<ParamField path="defaultValue" type="Value" required>
+  The value returned when no entry exists in `UserDefaults` (or when the stored value cannot be deserialized). Do not use this parameter when `Value` is an `Optional`; use the optional initializer instead.
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  The `UserDefaults` suite to read from and write to.
+</ParamField>
+
+<ParamField path="iCloud" type="Bool" default="false">
+  When `true`, the value is automatically synchronized with `Defaults.iCloud`.
+</ParamField>
+
+---
+
+#### Dynamic default value
+
+```swift
+public init(
+    _ name: String,
+    suite: UserDefaults = .standard,
+    iCloud: Bool = false,
+    default defaultValueGetter: @escaping () -> Value
+)
+```
+
+Use this initializer when the default value cannot be determined at declaration time — for example, when it depends on system state that may change during the app's lifetime.
+
+<Note>
+  This initializer does **not** call `UserDefaults.register(defaults:)`, so the default value will not be visible through legacy KVO bindings.
+</Note>
+
+```swift
+extension Defaults.Keys {
+    static let camera = Key<AVCaptureDevice?>("camera") { .default(for: .video) }
+}
+```
+
+<ParamField path="name" type="String" required>
+  The `UserDefaults` key name. Must be ASCII, must not start with `@`, and must not contain a dot (`.`).
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  The `UserDefaults` suite to read from and write to.
+</ParamField>
+
+<ParamField path="iCloud" type="Bool" default="false">
+  When `true`, the value is automatically synchronized with `Defaults.iCloud`.
+</ParamField>
+
+<ParamField path="defaultValueGetter" type="() -> Value" required>
+  A closure evaluated each time the default value is needed.
+</ParamField>
+
+---
+
+#### Optional value
+
+```swift
+public convenience init<T>(
+    _ name: String,
+    suite: UserDefaults = .standard,
+    iCloud: Bool = false
+) where Value == T?
+```
+
+Creates a key whose value is optional. The default value is implicitly `nil`; there is no need to pass one explicitly.
+
+```swift
+extension Defaults.Keys {
+    static let selectedColor = Key<Color?>("selectedColor")
+}
+
+Defaults[.selectedColor] // nil
+Defaults[.selectedColor] = .red
+Defaults[.selectedColor] // Optional(.red)
+```
+
+<ParamField path="name" type="String" required>
+  The `UserDefaults` key name. Must be ASCII, must not start with `@`, and must not contain a dot (`.`).
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults" default=".standard">
+  The `UserDefaults` suite to read from and write to.
+</ParamField>
+
+<ParamField path="iCloud" type="Bool" default="false">
+  When `true`, the value is automatically synchronized with `Defaults.iCloud`.
+</ParamField>
+
+---
+
+### Properties
+
+<ParamField path="name" type="String">
+  The raw `UserDefaults` key name (inherited from `_AnyKey`).
+</ParamField>
+
+<ParamField path="suite" type="UserDefaults">
+  The `UserDefaults` suite this key belongs to (inherited from `_AnyKey`).
+</ParamField>
+
+<ParamField path="defaultValue" type="Value">
+  The current default value. Calls the stored `defaultValueGetter` closure on every access. For keys created with a static default this always returns the same value; for keys created with a dynamic closure it may return different values over time.
+</ParamField>
+
+<ParamField path="isDefaultValue" type="Bool">
+  `true` when the currently stored value equals `defaultValue`. Only available when `Value: Equatable`.
+
+  ```swift
+  extension Defaults.Keys {
+      static let quality = Key<Double>("quality", default: 0.8)
+  }
+
+  Defaults[.quality].isDefaultValue // true — nothing written yet
+  Defaults[.quality] = 0.5
+  Defaults.Keys.quality.isDefaultValue // false
+  Defaults.reset(.quality)
+  Defaults.Keys.quality.isDefaultValue // true
+  ```
+</ParamField>
+
+---
+
+### Methods
+
+#### reset()
+
+```swift
+public func reset()
+```
+
+Removes the stored value for this key from its `UserDefaults` suite, causing subsequent reads to return `defaultValue`. Inherited from `_AnyKey`.
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+
+Defaults[.isUnicornMode] = true
+Defaults.Keys.isUnicornMode.reset()
+Defaults[.isUnicornMode] // false
+```
+
+Equivalent to calling `Defaults.reset(.isUnicornMode)`.

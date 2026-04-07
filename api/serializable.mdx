@@ -1,0 +1,231 @@
+---
+title: "Defaults.Serializable"
+description: "The protocol that types must conform to in order to be stored with Defaults."
+---
+
+`Defaults.Serializable` is the core protocol that gates which types can be used as the `Value` of a `Defaults.Key`. Any type that conforms to it — either directly or via one of the automatic bridge extensions — can be stored, observed, and synchronized with `UserDefaults`.
+
+---
+
+## Protocol definition
+
+```swift
+public protocol Serializable<Bridge> {
+    associatedtype Bridge: Defaults.Bridge
+
+    /// The bridge responsible for serializing/deserializing this type.
+    static var bridge: Bridge { get }
+
+    /// `true` when the type can be stored in UserDefaults without transformation.
+    static var isNativelySupportedType: Bool { get }
+}
+```
+
+The default implementation of `isNativelySupportedType` returns `false`. Types that are natively supported by `UserDefaults` (e.g. `Bool`, `Int`, `String`) override this to `true`.
+
+### `Defaults.Bridge`
+
+A bridge is responsible for the actual serialization and deserialization work. It has two associated types:
+
+- **`Value`** — the Swift type you work with.
+- **`Serializable`** — the intermediate type written to `UserDefaults`.
+
+```swift
+struct UserBridge: Defaults.Bridge {
+    typealias Value = User
+    typealias Serializable = [String: String]
+
+    func serialize(_ value: User?) -> [String: String]? {
+        guard let value else { return nil }
+        return ["username": value.username, "password": value.password]
+    }
+
+    func deserialize(_ object: [String: String]?) -> User? {
+        guard let object,
+              let username = object["username"],
+              let password = object["password"]
+        else { return nil }
+        return User(username: username, password: password)
+    }
+}
+```
+
+---
+
+## Custom conformance
+
+Conform your own types by declaring a `bridge` and implementing a matching `Defaults.Bridge`:
+
+```swift
+struct User {
+    var username: String
+    var password: String
+}
+
+extension User: Defaults.Serializable {
+    static let bridge = UserBridge()
+}
+```
+
+For `Codable` types this is unnecessary — see [Automatic conformances](#automatic-conformances) below.
+
+---
+
+## Built-in conforming types
+
+The following types ship with `Defaults.Serializable` conformance out of the box.
+
+### Natively supported scalars
+
+These types are stored in `UserDefaults` without any transformation (`isNativelySupportedType == true`):
+
+| Type | Notes |
+|---|---|
+| `Bool` | |
+| `Int` | |
+| `UInt` | |
+| `Double` | |
+| `Float` | |
+| `CGFloat` | |
+| `Int8` / `UInt8` | |
+| `Int16` / `UInt16` | |
+| `Int32` / `UInt32` | |
+| `Int64` / `UInt64` | |
+| `String` | |
+| `Data` | |
+| `Date` | |
+
+### Bridge-backed types
+
+These types are serialized via a dedicated bridge:
+
+| Type | Bridge | Serialized as |
+|---|---|---|
+| `URL` | `URLBridge` | Codable |
+| `UUID` | `UUIDBridge` | `String` |
+| `Color` (SwiftUI) | `ColorBridge` | Codable |
+| `Color.Resolved` *(macOS 14+, iOS 17+)* | via `Codable` | `String` |
+| `NSColor` *(macOS)* | `NSSecureCodingBridge` | Archived data |
+| `UIColor` *(iOS/tvOS/watchOS)* | `NSSecureCodingBridge` | Archived data |
+| `NSFontDescriptor` *(macOS)* | `NSSecureCodingBridge` | Archived data |
+| `UIFontDescriptor` *(iOS/tvOS/watchOS)* | `NSSecureCodingBridge` | Archived data |
+
+### Collections
+
+| Type | Condition | Notes |
+|---|---|---|
+| `Array<Element>` | `Element: Serializable` | `isNativelySupportedType` propagates from `Element` |
+| `Dictionary<Key, Value>` | `Key: LosslessStringConvertible & Hashable`, `Value: Serializable` | Natively supported when `Key == String` and `Value` is natively supported |
+| `Set<Element>` | `Element: Serializable` | Uses `SetBridge` |
+| `Optional<Wrapped>` | `Wrapped: Serializable` | `isNativelySupportedType` propagates from `Wrapped` |
+
+### Ranges
+
+| Type | Condition |
+|---|---|
+| `Range<Bound>` | `Bound: Serializable` |
+| `ClosedRange<Bound>` | `Bound: Serializable` |
+
+Both conform to `Defaults.RangeSerializable` (`Defaults.Range & Serializable`).
+
+---
+
+## Automatic conformances
+
+Conforming a type to `Defaults.Serializable` often requires no custom bridge because the library automatically selects the right one:
+
+| Your type also conforms to… | Bridge selected |
+|---|---|
+| `Codable` | `TopLevelCodableBridge` — serializes as a JSON `String` |
+| `RawRepresentable` | `RawRepresentableBridge` — stores the raw value |
+| `Codable & RawRepresentable` | `RawRepresentableCodableBridge` — stores the raw value, decoded via Codable |
+| `NSSecureCoding & NSObject` | `NSSecureCodingBridge` — archives with `NSKeyedArchiver` |
+| `Codable & NSSecureCoding & NSObject` | `CodableNSSecureCodingBridge` |
+
+```swift
+// Codable → TopLevelCodableBridge chosen automatically
+struct AppTheme: Codable, Defaults.Serializable {
+    var primaryColor: String
+    var isDark: Bool
+}
+
+extension Defaults.Keys {
+    static let theme = Key<AppTheme>("theme", default: AppTheme(primaryColor: "#000", isDark: false))
+}
+```
+
+---
+
+## Disambiguation protocols
+
+When a type satisfies multiple automatic conformance rules, use one of these protocols to explicitly pick a bridge.
+
+### `PreferRawRepresentable`
+
+```swift
+public protocol PreferRawRepresentable: RawRepresentable {}
+```
+
+Forces `RawRepresentableBridge` for types that are both `Codable` and `RawRepresentable`. By default such types would use `RawRepresentableCodableBridge`.
+
+```swift
+enum Interval: Int, Codable, Defaults.Serializable, Defaults.PreferRawRepresentable {
+    case tenMinutes = 10
+    case halfHour   = 30
+    case oneHour    = 60
+}
+```
+
+### `PreferNSSecureCoding`
+
+```swift
+public protocol PreferNSSecureCoding: NSObject, NSSecureCoding {}
+```
+
+Forces `NSSecureCodingBridge` for types that are both `Codable` and `NSSecureCoding`.
+
+---
+
+## Collection protocols
+
+These protocols let you add `Defaults.Serializable` conformance to your own collection types.
+
+### `CollectionSerializable`
+
+```swift
+public protocol CollectionSerializable<Element>: Collection, Serializable {
+    init(_ elements: [Element])
+}
+```
+
+Conform custom `Collection` types whose `Element` is `Serializable`. The required `init(_ elements:)` initializer is used by `CollectionBridge` to reconstruct the collection after deserialization.
+
+```swift
+struct MyList<T: Defaults.Serializable>: Defaults.CollectionSerializable {
+    var elements: [T]
+
+    init(_ elements: [T]) { self.elements = elements }
+
+    // Collection conformance …
+}
+```
+
+### `SetAlgebraSerializable`
+
+```swift
+public protocol SetAlgebraSerializable<Element>: SetAlgebra, Serializable {
+    func toArray() -> [Element]
+}
+```
+
+Conform custom `SetAlgebra` types whose `Element` is `Serializable & Hashable`. Because `SetAlgebra` does not itself conform to `Sequence`, `toArray()` provides the bridge with an ordered representation for serialization.
+
+```swift
+struct MySet<T: Defaults.Serializable & Hashable>: Defaults.SetAlgebraSerializable {
+    private var storage: Set<T> = []
+
+    func toArray() -> [T] { Array(storage) }
+
+    // SetAlgebra conformance …
+}
+```

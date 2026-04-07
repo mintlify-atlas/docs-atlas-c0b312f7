@@ -1,0 +1,194 @@
+---
+title: "Custom Types"
+---
+
+Defaults can store any type that conforms to `Defaults.Serializable`. Many types are supported out of the box, and you can add support for your own types by implementing a `Defaults.Bridge`.
+
+## Natively supported types
+
+The following types work with Defaults without any additional conformance:
+
+**Primitives:** `Bool`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Double`, `Float`, `CGFloat`, `String`, `Data`, `Date`
+
+**Foundation:** `URL`, `UUID`
+
+**SwiftUI / AppKit / UIKit:** `Color`, `NSColor` (macOS), `UIColor` (iOS/tvOS/watchOS), `NSFontDescriptor` (macOS), `UIFontDescriptor` (iOS/tvOS/watchOS)
+
+**Collections:** `Array`, `Dictionary`, `Set`, `Optional` — where the element type is itself `Defaults.Serializable`
+
+**Ranges:** `Range`, `ClosedRange` — where the bound type is `Defaults.Serializable`
+
+## `Defaults.Serializable`
+
+Any type you want to use with Defaults must conform to `Defaults.Serializable`. The protocol requires a single static property `bridge` that provides the serialization logic:
+
+```swift
+public protocol Serializable {
+    associatedtype Bridge: Defaults.Bridge
+    static var bridge: Bridge { get }
+}
+```
+
+## Implementing a custom bridge
+
+A `Defaults.Bridge` converts your type to a `UserDefaults`-compatible representation and back. It has two associated types:
+
+- `Value` — your custom type
+- `Serializable` — the type that will actually be stored in `UserDefaults` (must be a plist-compatible type: `String`, `Data`, `Int`, `Double`, `Bool`, `Date`, `Array`, or `Dictionary`)
+
+```swift
+struct User {
+    var username: String
+    var password: String
+}
+
+struct UserBridge: Defaults.Bridge {
+    typealias Value = User
+    typealias Serializable = [String: String]
+
+    func serialize(_ value: Value?) -> Serializable? {
+        guard let value else {
+            return nil
+        }
+
+        return [
+            "username": value.username,
+            "password": value.password
+        ]
+    }
+
+    func deserialize(_ object: Serializable?) -> Value? {
+        guard
+            let object,
+            let username = object["username"],
+            let password = object["password"]
+        else {
+            return nil
+        }
+
+        return User(username: username, password: password)
+    }
+}
+
+extension User: Defaults.Serializable {
+    static let bridge = UserBridge()
+}
+```
+
+Then declare your key as usual:
+
+```swift
+extension Defaults.Keys {
+    static let currentUser = Key<User>("currentUser", default: User(username: "", password: ""))
+}
+
+Defaults[.currentUser].username // => ""
+Defaults[.currentUser] = User(username: "sindresorhus", password: "hunter2")
+```
+
+## `Codable` types
+
+If your type already conforms to `Codable`, you do not need to write a bridge. Just add `Defaults.Serializable` and the library automatically provides `TopLevelCodableBridge`, which serializes the value as a JSON string:
+
+```swift
+struct User: Codable {
+    var username: String
+    var age: Int
+}
+
+extension User: Defaults.Serializable {}
+
+extension Defaults.Keys {
+    static let currentUser = Key<User>("currentUser", default: User(username: "Guest", age: 0))
+}
+```
+
+## `RawRepresentable` types
+
+Enums and structs with a `RawRepresentable` conformance are automatically handled by `RawRepresentableBridge`, which stores the raw value directly:
+
+```swift
+enum Theme: String, Defaults.Serializable {
+    case light
+    case dark
+    case system
+}
+
+extension Defaults.Keys {
+    static let theme = Key<Theme>("theme", default: .system)
+}
+```
+
+## Disambiguation with `PreferRawRepresentable` and `PreferNSSecureCoding`
+
+When a type conforms to multiple protocols that each have an auto-provided bridge, the compiler would be ambiguous about which bridge to use. Two marker protocols resolve this:
+
+### `PreferRawRepresentable`
+
+By default, a type that conforms to both `Codable` and `RawRepresentable` gets `RawRepresentableCodableBridge` (Codable wins). Add `Defaults.PreferRawRepresentable` to explicitly choose `RawRepresentableBridge` instead:
+
+```swift
+enum Interval: Int, Codable, Defaults.Serializable, Defaults.PreferRawRepresentable {
+    case tenMinutes = 10
+    case halfHour = 30
+    case oneHour = 60
+}
+```
+
+### `PreferNSSecureCoding`
+
+By default, a type that conforms to both `Codable` and `NSSecureCoding` gets `CodableBridge`. Add `Defaults.PreferNSSecureCoding` to use `NSSecureCodingBridge` instead (stores as `Data`):
+
+```swift
+final class MyLegacyModel: NSObject, NSSecureCoding, Codable, Defaults.Serializable, Defaults.PreferNSSecureCoding {
+    // ...
+}
+```
+
+## Custom collection types
+
+### `CollectionSerializable`
+
+For custom types that conform to `Collection` and can be initialized from an array of their element type:
+
+```swift
+struct OrderedSet<Element: Hashable & Defaults.Serializable>: Defaults.CollectionSerializable {
+    private var storage: [Element] = []
+
+    init(_ elements: [Element]) {
+        for element in elements where !storage.contains(element) {
+            storage.append(element)
+        }
+    }
+
+    // ... Collection conformance ...
+}
+
+extension OrderedSet: Defaults.Serializable where Element: Defaults.Serializable {}
+```
+
+The library provides `CollectionBridge` automatically when your element type is `Defaults.Serializable`.
+
+### `SetAlgebraSerializable`
+
+For custom types that conform to `SetAlgebra`. Since `SetAlgebra` does not conform to `Sequence`, you must also implement `toArray()`:
+
+```swift
+struct MyOptionSet: OptionSet, Defaults.SetAlgebraSerializable {
+    let rawValue: Int
+
+    static let option1 = MyOptionSet(rawValue: 1 << 0)
+    static let option2 = MyOptionSet(rawValue: 1 << 1)
+
+    func toArray() -> [MyOptionSet] {
+        var result: [MyOptionSet] = []
+        if contains(.option1) { result.append(.option1) }
+        if contains(.option2) { result.append(.option2) }
+        return result
+    }
+}
+
+extension MyOptionSet: Defaults.Serializable {}
+```
+
+The library provides `SetAlgebraBridge` automatically when your element type is `Defaults.Serializable` and `Hashable`.

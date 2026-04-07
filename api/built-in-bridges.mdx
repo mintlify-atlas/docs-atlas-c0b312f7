@@ -1,0 +1,344 @@
+---
+title: "Built-in Bridges"
+description: "Reference for all bridge types included with Defaults."
+---
+
+Defaults ships with a set of ready-made bridges that cover the most common Swift types. The correct bridge is selected automatically based on the type's protocol conformances. You only need to reference these directly when resolving ambiguity or building a custom `Serializable` conformance.
+
+## Codable bridges
+
+<AccordionGroup>
+  <Accordion title="TopLevelCodableBridge<Value: Codable>">
+    **Used for:** Any type that conforms to `Codable` and `Defaults.Serializable`.
+
+    Encodes the value to a JSON string with `JSONEncoder` (sorted keys) and decodes it with `JSONDecoder`.
+
+    ```swift
+    public struct TopLevelCodableBridge<Value: Codable>: CodableBridge, Sendable {}
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Value` (your `Codable` type) |
+    | `Serializable`  | `String` (JSON) |
+
+    This is the default bridge for any `Codable` type. No configuration needed.
+  </Accordion>
+
+  <Accordion title="RawRepresentableCodableBridge<Value: RawRepresentable & Codable>">
+    **Used for:** Types that conform to both `RawRepresentable` and `Codable` (for example, a `String`-backed enum that also synthesizes `Codable`).
+
+    Resolves compiler ambiguity between `RawRepresentableBridge` and `TopLevelCodableBridge` by explicitly choosing Codable JSON serialization.
+
+    ```swift
+    public struct RawRepresentableCodableBridge<Value: RawRepresentable & Codable>: CodableBridge, Sendable {}
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Value` |
+    | `Serializable`  | `String` (JSON) |
+
+    <Note>
+      To store the raw value directly instead of using JSON, conform your type to `Defaults.PreferRawRepresentable`.
+    </Note>
+  </Accordion>
+
+  <Accordion title="CodableNSSecureCodingBridge<Value: Codable & NSSecureCoding & NSObject>">
+    **Used for:** Types that conform to both `Codable` and `NSSecureCoding`.
+
+    Resolves ambiguity between `TopLevelCodableBridge` and `NSSecureCodingBridge` by explicitly choosing Codable JSON serialization.
+
+    ```swift
+    public struct CodableNSSecureCodingBridge<Value: Codable & NSSecureCoding & NSObject>: CodableBridge, Sendable {}
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Value` |
+    | `Serializable`  | `String` (JSON) |
+
+    <Note>
+      To use `NSKeyedArchiver` instead, conform your type to `Defaults.PreferNSSecureCoding`.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## RawRepresentable bridge
+
+<AccordionGroup>
+  <Accordion title="RawRepresentableBridge<Value: RawRepresentable>">
+    **Used for:** Enums and other `RawRepresentable` types where the raw value is itself natively storable.
+
+    Stores `value.rawValue` directly — no JSON encoding. More compact and readable in the defaults database than the Codable equivalent.
+
+    ```swift
+    public struct RawRepresentableBridge<Value: RawRepresentable>: Bridge, Sendable {
+        public typealias Serializable = Value.RawValue
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Value` |
+    | `Serializable`  | `Value.RawValue` |
+
+    **Example:**
+
+    ```swift
+    enum Direction: String, Defaults.Serializable {
+        case north, south, east, west
+    }
+    // Stored in UserDefaults as "north", "south", etc.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## NSSecureCoding bridge
+
+<AccordionGroup>
+  <Accordion title="NSSecureCodingBridge<Value: NSSecureCoding & NSObject>">
+    **Used for:** Objective-C classes that adopt `NSSecureCoding` (e.g. `NSColor`, `UIColor`, `CLLocation`).
+
+    Serializes using `NSKeyedArchiver.archivedData(withRootObject:requiringSecureCoding:)` and deserializes with `NSKeyedUnarchiver.unarchivedObject(ofClass:from:)`.
+
+    ```swift
+    public struct NSSecureCodingBridge<Value: NSSecureCoding & NSObject>: Bridge, Sendable {
+        public typealias Serializable = Data
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Value` |
+    | `Serializable`  | `Data` |
+  </Accordion>
+</AccordionGroup>
+
+## Container bridges
+
+<AccordionGroup>
+  <Accordion title="OptionalBridge<Wrapped: Serializable>">
+    **Used for:** `Optional<T>` where `T: Defaults.Serializable`.
+
+    Delegates directly to the wrapped type's bridge. Both `serialize` and `deserialize` pass through to `Wrapped.bridge`.
+
+    ```swift
+    public struct OptionalBridge<Wrapped: Serializable>: Bridge, Sendable {
+        public typealias Value = Wrapped.Value
+        public typealias Serializable = Wrapped.Serializable
+    }
+    ```
+
+    Applied automatically when you declare an optional key value type. You do not instantiate this bridge directly.
+  </Accordion>
+
+  <Accordion title="ArrayBridge<Element: Serializable>">
+    **Used for:** `[Element]` where `Element: Defaults.Serializable`.
+
+    Maps each element through `Element.bridge.serialize` / `Element.bridge.deserialize`. Elements that fail conversion are silently dropped (via `.compact()`).
+
+    ```swift
+    public struct ArrayBridge<Element: Serializable>: Bridge, Sendable {
+        public typealias Value = [Element]
+        public typealias Serializable = [Element.Serializable]
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `[Element]` |
+    | `Serializable`  | `[Element.Serializable]` |
+  </Accordion>
+
+  <Accordion title="DictionaryBridge<Key, Element: Serializable>">
+    **Used for:** `[Key: Element]` where `Key: LosslessStringConvertible & Hashable` and `Element: Defaults.Serializable`.
+
+    Converts dictionary keys to `String` via `LosslessStringConvertible` (for `UserDefaults` compatibility) and maps values through `Element.bridge`.
+
+    ```swift
+    public struct DictionaryBridge<Key: LosslessStringConvertible & Hashable, Element: Serializable>: Bridge, Sendable {
+        public typealias Value = [Key: Element.Value]
+        public typealias Serializable = [String: Element.Serializable]
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `[Key: Element.Value]` |
+    | `Serializable`  | `[String: Element.Serializable]` |
+  </Accordion>
+
+  <Accordion title="SetBridge<Element: Serializable & Hashable>">
+    **Used for:** `Set<Element>` where `Element: Defaults.Serializable & Hashable`.
+
+    Serializes the set as an array. For natively supported element types the elements are stored as-is; otherwise each element is passed through its own bridge.
+
+    ```swift
+    public struct SetBridge<Element: Serializable & Hashable>: Bridge, Sendable {
+        public typealias Value = Set<Element>
+        public typealias Serializable = Any
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Set<Element>` |
+    | `Serializable`  | `Any` (array at runtime) |
+  </Accordion>
+
+  <Accordion title="SetAlgebraBridge<Value: SetAlgebraSerializable>">
+    **Used for:** Custom types that conform to `SetAlgebra` and `Defaults.SetAlgebraSerializable`.
+
+    Similar to `SetBridge`, but designed for `SetAlgebra` types (which do not conform to `Sequence`). Requires the type to implement `toArray() -> [Element]` so the bridge can iterate elements.
+
+    ```swift
+    public struct SetAlgebraBridge<Value: SetAlgebraSerializable>: Bridge, Sendable
+        where Value.Element: Serializable {
+        public typealias Serializable = Any
+    }
+    ```
+
+    ```swift
+    // Conformance requirement
+    public protocol SetAlgebraSerializable<Element>: SetAlgebra, Serializable {
+        func toArray() -> [Element]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="CollectionBridge<Value: CollectionSerializable>">
+    **Used for:** Custom collection types that conform to `Defaults.CollectionSerializable`.
+
+    Serializes the collection as an array by iterating elements through their bridge. Requires the type to provide `init(_ elements: [Element])` for reconstruction.
+
+    ```swift
+    public struct CollectionBridge<Value: CollectionSerializable>: Bridge, Sendable
+        where Value.Element: Serializable {
+        public typealias Serializable = Any
+    }
+    ```
+
+    ```swift
+    // Conformance requirement
+    public protocol CollectionSerializable<Element>: Collection, Serializable {
+        init(_ elements: [Element])
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Foundation type bridges
+
+<AccordionGroup>
+  <Accordion title="URLBridge">
+    **Used for:** `URL`.
+
+    Conforms to `CodableBridge`, so URLs are encoded as JSON strings. Handles both file URLs and network URLs.
+
+    ```swift
+    public struct URLBridge: CodableBridge, Sendable {
+        public typealias Value = URL
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `URL` |
+    | `Serializable`  | `String` (JSON-encoded) |
+  </Accordion>
+
+  <Accordion title="UUIDBridge">
+    **Used for:** `UUID`.
+
+    Stores the UUID as its canonical hyphenated string representation (`uuidString`), e.g. `"6BA7B810-9DAD-11D1-80B4-00C04FD430C8"`.
+
+    ```swift
+    public struct UUIDBridge: Bridge, Sendable {
+        public typealias Value = UUID
+        public typealias Serializable = String
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `UUID` |
+    | `Serializable`  | `String` |
+  </Accordion>
+
+  <Accordion title="RangeBridge<T: RangeSerializable>">
+    **Used for:** `Range<Bound>` and `ClosedRange<Bound>` where `Bound: Comparable & Defaults.Serializable`.
+
+    Stores the range as a two-element array `[lowerBound, upperBound]`. If `Bound` is a natively supported type the bounds are stored directly; otherwise each bound is passed through its own bridge.
+
+    ```swift
+    public struct RangeBridge<T: RangeSerializable>: Bridge, Sendable {
+        public typealias Value = T
+        public typealias Serializable = [Any]
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `T` (a `Range` or `ClosedRange`) |
+    | `Serializable`  | `[Any]` (`[lowerBound, upperBound]`) |
+
+    ```swift
+    // Example
+    extension Defaults.Keys {
+        static let validAge = Key<ClosedRange<Int>>("validAge", default: 0...120)
+    }
+    // Stored as [0, 120]
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## SwiftUI bridge
+
+<AccordionGroup>
+  <Accordion title="ColorBridge">
+    **Used for:** `SwiftUI.Color`.
+
+    Preserves the color space whenever `Color.cgColor` is available by storing a `[colorSpaceName, [components]]` array. Falls back to `UIColor`/`NSColor` serialization when `cgColor` is `nil` (e.g. for semantic colors).
+
+    ```swift
+    public struct ColorBridge: Bridge, Sendable {
+        public typealias Value = Color
+        public typealias Serializable = Any
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `SwiftUI.Color` |
+    | `Serializable`  | `Any` (`[String, [CGFloat]]` or platform color data) |
+
+    <Warning>
+      Converting `SwiftUI.Color` to `UIColor`/`NSColor` before storing it can lose color-space information. `ColorBridge` avoids this by preferring the `CGColor` representation.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Type-erasure bridge
+
+<AccordionGroup>
+  <Accordion title="AnyBridge">
+    **Used for:** `Defaults.AnySerializable` — the type-erased wrapper for heterogeneous defaults values.
+
+    Passes the underlying `value` through without transformation. Both `serialize` and `deserialize` operate directly on the wrapped `Any?` payload.
+
+    ```swift
+    public struct AnyBridge: Bridge, Sendable {
+        public typealias Value = Defaults.AnySerializable
+        public typealias Serializable = Any
+    }
+    ```
+
+    | Associated type | Concrete type |
+    |-----------------|---------------|
+    | `Value`         | `Defaults.AnySerializable` |
+    | `Serializable`  | `Any` |
+
+    Use `AnySerializable` when you need to store values whose type is not known at compile time, or when bridging dynamically typed data.
+  </Accordion>
+</AccordionGroup>

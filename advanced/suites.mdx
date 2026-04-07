@@ -1,0 +1,129 @@
+---
+title: "Custom Suites"
+---
+
+A `UserDefaults` suite is a named storage domain backed by a separate `plist` file on disk. Custom suites let you share `UserDefaults` values between your app and its extensions — widgets, share extensions, watch companions, and more — through a shared App Group container.
+
+## Default suite
+
+Unless you specify otherwise, every `Defaults.Key` uses `UserDefaults.standard`. This storage is private to your app and is not accessible to extensions.
+
+```swift
+extension Defaults.Keys {
+    // Stored in UserDefaults.standard — app only
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
+}
+```
+
+## Per-key custom suite
+
+Pass a `suite:` argument when declaring the key to store that specific key in a different suite:
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>(
+        "isUnicornMode",
+        default: false,
+        suite: .shared          // see definition below
+    )
+}
+```
+
+Different keys can live in different suites — there is no requirement that all keys share the same suite.
+
+## Defining a shared suite
+
+The conventional pattern is to extend `UserDefaults` with a static property for your App Group suite:
+
+```swift
+extension UserDefaults {
+    static let shared = UserDefaults(suiteName: "group.com.example.app")!
+}
+
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false, suite: .shared)
+}
+```
+
+Both your app and any extension that belongs to the same App Group can now read and write `Defaults[.isUnicornMode]` and see the same value.
+
+## Setting up the App Groups capability
+
+Before your suite name will work at runtime, enable the App Groups capability in Xcode for **each target** that needs access (your app target, your widget extension target, etc.):
+
+1. Select the target in the project editor.
+2. Open the **Signing & Capabilities** tab.
+3. Click **+ Capability** and add **App Groups**.
+4. Add the group identifier you chose (e.g. `group.com.example.app`).
+
+The suite name passed to `UserDefaults(suiteName:)` must match this identifier exactly.
+
+<Note>
+Suite names conventionally follow the format `group.com.yourteam.appname`. The `group.` prefix is required by Apple for App Group identifiers.
+</Note>
+
+## Typical use cases
+
+| Scenario | Targets sharing the suite |
+|----------|--------------------------|
+| Home Screen widget | App + WidgetKit extension |
+| Share extension | App + Share extension |
+| watchOS companion | iOS app + watchOS app |
+| Action extension | App + Action extension |
+
+## Resetting all keys in a suite
+
+`Defaults.removeAll(suite:)` removes every user-defined entry in the given suite:
+
+```swift
+// Reset all keys in the shared suite
+Defaults.removeAll(suite: .shared)
+
+// Reset all keys in the standard suite
+Defaults.removeAll()
+```
+
+<Note>
+`removeAll` only removes user-defined entries. System-defined entries registered by `UserDefaults.register(defaults:)` are not affected.
+</Note>
+
+## iCloud sync with a custom suite
+
+Using a custom suite does not prevent iCloud synchronization. Set `iCloud: true` on the key as normal:
+
+```swift
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>(
+        "isUnicornMode",
+        default: false,
+        suite: .shared,
+        iCloud: true
+    )
+}
+```
+
+The key will be stored in the App Group suite locally and synced via `Defaults.iCloud` — both behaviors apply simultaneously.
+
+## Full example
+
+```swift
+import Defaults
+import WidgetKit
+
+// Shared suite accessible to both the app and the widget extension
+extension UserDefaults {
+    static let shared = UserDefaults(suiteName: "group.com.example.myapp")!
+}
+
+// Keys stored in the shared suite
+extension Defaults.Keys {
+    static let isUnicornMode = Key<Bool>("isUnicornMode", default: false, suite: .shared)
+    static let widgetRefreshInterval = Key<Int>("widgetRefreshInterval", default: 30, suite: .shared)
+}
+
+// In your app:
+Defaults[.isUnicornMode] = true
+
+// In your WidgetKit extension — reads the same value:
+let enabled = Defaults[.isUnicornMode] // => true
+```

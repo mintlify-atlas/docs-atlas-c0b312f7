@@ -1,0 +1,76 @@
+---
+title: "Installation"
+description: "Add Defaults to your project via Swift Package Manager."
+---
+
+Defaults is distributed as a Swift package. There are two library products:
+
+| Product | Use when |
+|---------|----------|
+| `Defaults` | Main library — required for all projects. |
+| `DefaultsMacros` | Optional — add this when you need the `@ObservableDefault` macro. |
+
+## Add via Xcode
+
+<Steps>
+  <Step title="Open the Add Package Dependencies dialog">
+    In Xcode, go to **File → Add Package Dependencies**.
+  </Step>
+  <Step title="Enter the package URL">
+    Paste the following URL into the search field and press **Return**:
+
+    ```
+    https://github.com/sindresorhus/Defaults
+    ```
+  </Step>
+  <Step title="Choose a version requirement">
+    Select **Up to Next Major Version** and set the lower bound to the latest release (for example, `9.0.0`). This ensures you receive bug fixes and minor improvements without unexpected breaking changes.
+  </Step>
+  <Step title="Add the library to your target">
+    Xcode will show the available library products. Add `Defaults` to your app target. If you plan to use the `@ObservableDefault` macro, also add `DefaultsMacros`.
+  </Step>
+</Steps>
+
+## Import the library
+
+At the top of any Swift file where you want to use Defaults:
+
+```swift
+import Defaults
+```
+
+If you added `DefaultsMacros` and need the `@ObservableDefault` macro:
+
+```swift
+import Defaults
+import DefaultsMacros
+```
+
+## Add via Package.swift
+
+If you are building a Swift package or framework that depends on Defaults, add the package to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/sindresorhus/Defaults", from: "9.0.0")
+]
+```
+
+Then reference the product in your target:
+
+```swift
+targets: [
+    .target(
+        name: "MyLibrary",
+        dependencies: [
+            .product(name: "Defaults", package: "Defaults")
+        ]
+    )
+]
+```
+
+To also include the macros library:
+
+```swift
+.product(name: "DefaultsMacros", package: "Defaults")
+```

@@ -1,0 +1,128 @@
+---
+title: "Bridges Overview"
+description: "How Defaults serializes and deserializes values to and from UserDefaults."
+---
+
+## What is a bridge?
+
+A **bridge** is an object that knows how to convert a Swift value into something `UserDefaults` can store, and back again.
+
+`UserDefaults` natively supports a small set of types (`String`, `Int`, `Double`, `Bool`, `Data`, `Date`, `Array`, `Dictionary`, and `URL`). Everything else must be converted to one of those forms before it can be stored. A bridge encapsulates that conversion logic in one place.
+
+| Direction | Method | What it does |
+|-----------|--------|--------------|
+| Swift → UserDefaults | `serialize(_ value: Value?) -> Serializable?` | Converts your type into a `UserDefaults`-compatible form |
+| UserDefaults → Swift | `deserialize(_ object: Serializable?) -> Value?` | Reconstructs your type from the stored form |
+
+## The `Bridge` protocol
+
+```swift
+public protocol Bridge<Value, Serializable> {
+    associatedtype Value
+    associatedtype Serializable
+
+    func serialize(_ value: Value?) -> Serializable?
+    func deserialize(_ object: Serializable?) -> Value?
+}
+```
+
+- **`Value`** — the Swift type you want to store (e.g. `User`).
+- **`Serializable`** — the `UserDefaults`-compatible type used for storage (e.g. `[String: String]`).
+
+Both methods accept and return optionals. Return `nil` from either method to signal that conversion is not possible.
+
+## The `Serializable` protocol
+
+A type must conform to `Defaults.Serializable` before it can be used as a `Defaults` key value. The protocol requires a single static property that points to the bridge instance:
+
+```swift
+public protocol Serializable<Bridge> {
+    associatedtype Bridge: Defaults.Bridge
+
+    static var bridge: Bridge { get }
+    static var isNativelySupportedType: Bool { get }
+}
+```
+
+Defaults provides automatic conformances for many standard types. You only need to supply your own bridge for types that fall outside those cases.
+
+## When to write a custom bridge
+
+You need a custom bridge when:
+
+- Your type is **not** `Codable` or `RawRepresentable` (and you cannot add those conformances).
+- You need **precise control** over the serialized representation — for example, to stay compatible with data written by a previous version of your app.
+- Your type conforms to multiple protocols (e.g. both `Codable` and `RawRepresentable`) and the automatically selected bridge is not the one you want. In that case you can conform to `Defaults.PreferRawRepresentable` or `Defaults.PreferNSSecureCoding` to resolve the ambiguity, or write a fully custom bridge.
+
+You do **not** need a custom bridge when:
+
+- Your type conforms to `Codable` — `TopLevelCodableBridge` is used automatically.
+- Your type conforms to `RawRepresentable` — `RawRepresentableBridge` is used automatically.
+- Your type conforms to `NSSecureCoding & NSObject` — `NSSecureCodingBridge` is used automatically.
+
+## Example: custom bridge for a `User` struct
+
+Consider a `User` struct that is neither `Codable` nor `RawRepresentable`:
+
+```swift
+struct User {
+    let username: String
+    let password: String
+}
+```
+
+### 1. Define the bridge
+
+```swift
+struct UserBridge: Defaults.Bridge {
+    typealias Value = User
+    typealias Serializable = [String: String]
+
+    func serialize(_ value: Value?) -> Serializable? {
+        guard let value else {
+            return nil
+        }
+
+        return [
+            "username": value.username,
+            "password": value.password
+        ]
+    }
+
+    func deserialize(_ object: Serializable?) -> Value? {
+        guard
+            let object,
+            let username = object["username"],
+            let password = object["password"]
+        else {
+            return nil
+        }
+
+        return User(username: username, password: password)
+    }
+}
+```
+
+### 2. Wire it up with `Defaults.Serializable`
+
+```swift
+extension User: Defaults.Serializable {
+    static let bridge = UserBridge()
+}
+```
+
+### 3. Declare and use a key
+
+```swift
+extension Defaults.Keys {
+    static let currentUser = Key<User>("currentUser", default: User(username: "guest", password: ""))
+}
+
+// Read
+let user = Defaults[.currentUser]
+
+// Write
+Defaults[.currentUser] = User(username: "alice", password: "s3cr3t")
+```
+
+`Defaults` calls `UserBridge.serialize` before writing and `UserBridge.deserialize` after reading — your application code never interacts with the raw dictionary.
